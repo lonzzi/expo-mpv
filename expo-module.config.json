@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["ExpoMpvModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.mpv.ExpoMpvModule"]
+  }
+}
