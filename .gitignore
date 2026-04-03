@@ -43,6 +43,9 @@ android/keystores/debug.keystore
 #
 example/ios/Pods
 
+# MPVKit xcframeworks (downloaded by ios/download-mpvkit.sh)
+ios/Frameworks/
+
 # Ruby
 example/vendor/
 

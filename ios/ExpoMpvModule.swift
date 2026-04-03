@@ -1,48 +1,105 @@
 import ExpoModulesCore
 
 public class ExpoMpvModule: Module {
-  // Each module class must implement the definition function. The definition consists of components
-  // that describes the module's functionality and behavior.
-  // See https://docs.expo.dev/modules/module-api for more details about available components.
   public func definition() -> ModuleDefinition {
-    // Sets the name of the module that JavaScript code will use to refer to the module. Takes a string as an argument.
-    // Can be inferred from module's class name, but it's recommended to set it explicitly for clarity.
-    // The module will be accessible from `requireNativeModule('ExpoMpv')` in JavaScript.
     Name("ExpoMpv")
 
-    // Defines constant property on the module.
-    Constant("PI") {
-      Double.pi
-    }
+    // MARK: - View
 
-    // Defines event names that the module can send to JavaScript.
-    Events("onChange")
-
-    // Defines a JavaScript synchronous function that runs the native code on the JavaScript thread.
-    Function("hello") {
-      return "Hello world! 👋"
-    }
-
-    // Defines a JavaScript function that always returns a Promise and whose native code
-    // is by default dispatched on the different thread than the JavaScript runtime runs on.
-    AsyncFunction("setValueAsync") { (value: String) in
-      // Send an event to JavaScript.
-      self.sendEvent("onChange", [
-        "value": value
-      ])
-    }
-
-    // Enables the module to be used as a native view. Definition components that are accepted as part of the
-    // view definition: Prop, Events.
     View(ExpoMpvView.self) {
-      // Defines a setter for the `url` prop.
-      Prop("url") { (view: ExpoMpvView, url: URL) in
-        if view.webView.url != url {
-          view.webView.load(URLRequest(url: url))
+      // Events emitted by the native view
+      Events(
+        "onPlaybackStateChange",
+        "onProgress",
+        "onLoad",
+        "onError",
+        "onEnd",
+        "onBuffer",
+        "onSeek",
+        "onVolumeChange"
+      )
+
+      // MARK: - Props
+
+      Prop("source") { (view: ExpoMpvView, source: String?) in
+        if let source = source {
+          view.loadFile(source)
         }
       }
 
-      Events("onLoad")
+      Prop("paused") { (view: ExpoMpvView, paused: Bool) in
+        if paused {
+          view.pause()
+        } else {
+          view.play()
+        }
+      }
+
+      Prop("speed") { (view: ExpoMpvView, speed: Double) in
+        view.setSpeed(speed)
+      }
+
+      Prop("volume") { (view: ExpoMpvView, volume: Double) in
+        view.setVolume(volume)
+      }
+
+      Prop("muted") { (view: ExpoMpvView, muted: Bool) in
+        view.setMuted(muted)
+      }
+
+      Prop("loop") { (view: ExpoMpvView, loop: Bool) in
+        view.setLooping(loop)
+      }
+
+      // MARK: - Imperative Functions (called via ref)
+
+      AsyncFunction("play") { (view: ExpoMpvView) in
+        view.play()
+      }.runOnQueue(.main)
+
+      AsyncFunction("pause") { (view: ExpoMpvView) in
+        view.pause()
+      }.runOnQueue(.main)
+
+      AsyncFunction("togglePlay") { (view: ExpoMpvView) in
+        view.togglePlay()
+      }.runOnQueue(.main)
+
+      AsyncFunction("stop") { (view: ExpoMpvView) in
+        view.stop()
+      }.runOnQueue(.main)
+
+      AsyncFunction("seekTo") { (view: ExpoMpvView, position: Double) in
+        view.seekTo(position)
+      }.runOnQueue(.main)
+
+      AsyncFunction("seekBy") { (view: ExpoMpvView, offset: Double) in
+        view.seekBy(offset)
+      }.runOnQueue(.main)
+
+      AsyncFunction("setSpeed") { (view: ExpoMpvView, speed: Double) in
+        view.setSpeed(speed)
+      }.runOnQueue(.main)
+
+      AsyncFunction("setVolume") { (view: ExpoMpvView, volume: Double) in
+        view.setVolume(volume)
+      }.runOnQueue(.main)
+
+      AsyncFunction("setMuted") { (view: ExpoMpvView, muted: Bool) in
+        view.setMuted(muted)
+      }.runOnQueue(.main)
+
+      AsyncFunction("setSubtitleTrack") { (view: ExpoMpvView, trackId: Int) in
+        view.setSubtitleTrack(trackId)
+      }.runOnQueue(.main)
+
+      AsyncFunction("setAudioTrack") { (view: ExpoMpvView, trackId: Int) in
+        view.setAudioTrack(trackId)
+      }.runOnQueue(.main)
+
+      AsyncFunction("getPlaybackInfo") { (view: ExpoMpvView) -> [String: Any] in
+        return view.getPlaybackInfo()
+      }.runOnQueue(.main)
     }
   }
 }
