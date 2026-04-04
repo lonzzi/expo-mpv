@@ -22,7 +22,14 @@ const ExpoMpvView = forwardRef<ExpoMpvViewRef, ExpoMpvViewProps>((props, ref) =>
     setMuted: (muted: boolean) => nativeRef.current?.setMuted(muted),
     setSubtitleTrack: (trackId: number) => nativeRef.current?.setSubtitleTrack(trackId),
     setAudioTrack: (trackId: number) => nativeRef.current?.setAudioTrack(trackId),
+    addSubtitle: (path: string, flag?: string, title?: string, lang?: string) =>
+      nativeRef.current?.addSubtitle(path, flag, title, lang),
+    removeSubtitle: (trackId: number) => nativeRef.current?.removeSubtitle(trackId),
+    reloadSubtitles: () => nativeRef.current?.reloadSubtitles(),
+    setSubtitleDelay: (seconds: number) => nativeRef.current?.setSubtitleDelay(seconds),
     getPlaybackInfo: () => nativeRef.current?.getPlaybackInfo(),
+    getTrackList: () => nativeRef.current?.getTrackList(),
+    getCurrentTrackIds: () => nativeRef.current?.getCurrentTrackIds(),
   }));
 
   return <NativeView ref={nativeRef} {...props} />;

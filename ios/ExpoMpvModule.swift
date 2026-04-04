@@ -97,8 +97,32 @@ public class ExpoMpvModule: Module {
         view.setAudioTrack(trackId)
       }.runOnQueue(.main)
 
+      AsyncFunction("addSubtitle") { (view: ExpoMpvView, path: String, flag: String?, title: String?, lang: String?) in
+        view.addSubtitle(path, flag: flag ?? "auto", title: title, lang: lang)
+      }.runOnQueue(.main)
+
+      AsyncFunction("removeSubtitle") { (view: ExpoMpvView, trackId: Int) in
+        view.removeSubtitle(trackId)
+      }.runOnQueue(.main)
+
+      AsyncFunction("reloadSubtitles") { (view: ExpoMpvView) in
+        view.reloadSubtitles()
+      }.runOnQueue(.main)
+
+      AsyncFunction("setSubtitleDelay") { (view: ExpoMpvView, seconds: Double) in
+        view.setSubtitleDelay(seconds)
+      }.runOnQueue(.main)
+
       AsyncFunction("getPlaybackInfo") { (view: ExpoMpvView) -> [String: Any] in
         return view.getPlaybackInfo()
+      }.runOnQueue(.main)
+
+      AsyncFunction("getTrackList") { (view: ExpoMpvView) -> [[String: Any]] in
+        return view.getTrackList()
+      }.runOnQueue(.main)
+
+      AsyncFunction("getCurrentTrackIds") { (view: ExpoMpvView) -> [String: Int] in
+        return view.getCurrentTrackIds()
       }.runOnQueue(.main)
     }
   }

@@ -47,6 +47,30 @@ export type PlaybackInfo = {
   muted: boolean;
 };
 
+export type TrackInfo = {
+  id: number;
+  type: 'video' | 'audio' | 'sub' | string;
+  title: string;
+  lang: string;
+  codec: string;
+  selected: boolean;
+  isDefault: boolean;
+  isExternal: boolean;
+  // audio-specific
+  channelCount?: number;
+  sampleRate?: number;
+  // video-specific
+  width?: number;
+  height?: number;
+  fps?: number;
+};
+
+export type CurrentTrackIds = {
+  vid: number;
+  aid: number;
+  sid: number;
+};
+
 // MARK: - Module Events (non-view)
 
 export type ExpoMpvModuleEvents = {};
@@ -141,5 +165,15 @@ export type ExpoMpvViewRef = {
   setMuted: (muted: boolean) => Promise<void>;
   setSubtitleTrack: (trackId: number) => Promise<void>;
   setAudioTrack: (trackId: number) => Promise<void>;
+  /** Load an external subtitle file (local path or URL). */
+  addSubtitle: (path: string, flag?: string, title?: string, lang?: string) => Promise<void>;
+  /** Remove a subtitle track by ID. */
+  removeSubtitle: (trackId: number) => Promise<void>;
+  /** Reload current subtitles. */
+  reloadSubtitles: () => Promise<void>;
+  /** Set subtitle delay in seconds (positive = later, negative = earlier). */
+  setSubtitleDelay: (seconds: number) => Promise<void>;
   getPlaybackInfo: () => Promise<PlaybackInfo>;
+  getTrackList: () => Promise<TrackInfo[]>;
+  getCurrentTrackIds: () => Promise<CurrentTrackIds>;
 };

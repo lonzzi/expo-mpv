@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import Libmpv
+import CoreText
 
 class ExpoMpvView: ExpoView {
   // MARK: - Metal Layer
@@ -93,17 +94,33 @@ class ExpoMpvView: ExpoView {
     var wid = unsafeBitCast(metalLayer, to: Int64.self)
     checkError(mpv_set_option(mpv, "wid", MPV_FORMAT_INT64, &wid), label: "set wid")
 
-    // Rendering configuration: gpu-next + vulkan + moltenvk → Metal
-    setOptionString("vo", "gpu-next")
+    // Rendering configuration
+    // On simulator: use vo=gpu (old pipeline, avoids libplacebo's pl_tex_upload_pbo
+    // which crashes on simulator due to MTLSimDriver XPC shared memory size limits)
+    // On device: use vo=gpu-next (libplacebo pipeline, better quality)
+    #if targetEnvironment(simulator)
+    log("Running on SIMULATOR — using vo=gpu to avoid MTLSimDriver crash")
+    setOptionString("vo", "gpu")
     setOptionString("gpu-api", "vulkan")
     setOptionString("gpu-context", "moltenvk")
     setOptionString("hwdec", "videotoolbox-copy")
+    #else
+    setOptionString("vo", "gpu-next")
+    setOptionString("gpu-api", "vulkan")
+    setOptionString("gpu-context", "moltenvk")
+    setOptionString("hwdec", "videotoolbox")
+    #endif
 
     // General options
     setOptionString("keep-open", "yes")
     setOptionString("idle", "yes")
     setOptionString("input-default-bindings", "no")
     setOptionString("input-vo-keyboard", "no")
+
+    // Subtitle font configuration
+    // iOS has no fontconfig, so libass can't discover system fonts.
+    // We use CoreText to find a CJK font file and point libass to it.
+    configureFonts(mpv)
 
     // Initialize mpv
     log("Initializing mpv...")
@@ -415,6 +432,34 @@ class ExpoMpvView: ExpoView {
     setInt("aid", Int64(trackId))
   }
 
+  /// Load an external subtitle file (local path or URL).
+  func addSubtitle(_ path: String, flag: String = "auto", title: String? = nil, lang: String? = nil) {
+    guard mpv != nil else { return }
+    // sub-add <url> [<flags> [<title> [<lang>]]]
+    var args = [path, flag]
+    if let title = title { args.append(title) }
+    if let lang = lang {
+      if args.count == 2 { args.append("") } // placeholder for title
+      args.append(lang)
+    }
+    log("addSubtitle: \(path) flags=\(flag)")
+    commandAsync("sub-add", args: args)
+  }
+
+  /// Remove a subtitle track by id.
+  func removeSubtitle(_ trackId: Int) {
+    commandAsync("sub-remove", args: [String(trackId)])
+  }
+
+  /// Reload current subtitles (useful after font changes).
+  func reloadSubtitles() {
+    commandAsync("sub-reload")
+  }
+
+  func setSubtitleDelay(_ seconds: Double) {
+    setDouble("sub-delay", seconds)
+  }
+
   func getPlaybackInfo() -> [String: Any] {
     let position = getDouble("time-pos")
     let duration = getDouble("duration")
@@ -433,6 +478,52 @@ class ExpoMpvView: ExpoView {
     ]
   }
 
+  func getTrackList() -> [[String: Any]] {
+    guard mpv != nil else { return [] }
+
+    let count = getInt("track-list/count")
+    var tracks: [[String: Any]] = []
+
+    for i in 0..<count {
+      let prefix = "track-list/\(i)"
+      var track: [String: Any] = [:]
+
+      track["id"] = Int(getInt("\(prefix)/id"))
+      track["type"] = getString("\(prefix)/type") ?? "unknown"
+      track["title"] = getString("\(prefix)/title") ?? ""
+      track["lang"] = getString("\(prefix)/lang") ?? ""
+      track["codec"] = getString("\(prefix)/codec") ?? ""
+      track["selected"] = getFlag("\(prefix)/selected")
+      track["isDefault"] = getFlag("\(prefix)/default")
+      track["isExternal"] = getFlag("\(prefix)/external")
+
+      // Extra info based on track type
+      let trackType = track["type"] as? String ?? ""
+      if trackType == "audio" {
+        track["channelCount"] = Int(getInt("\(prefix)/demux-channel-count"))
+        track["sampleRate"] = Int(getInt("\(prefix)/demux-samplerate"))
+      } else if trackType == "video" {
+        track["width"] = Int(getInt("\(prefix)/demux-w"))
+        track["height"] = Int(getInt("\(prefix)/demux-h"))
+        track["fps"] = getDouble("\(prefix)/demux-fps")
+      }
+
+      tracks.append(track)
+    }
+
+    log("getTrackList: \(tracks.count) tracks found")
+    return tracks
+  }
+
+  func getCurrentTrackIds() -> [String: Int] {
+    guard mpv != nil else { return [:] }
+    return [
+      "vid": Int(getInt("vid")),
+      "aid": Int(getInt("aid")),
+      "sid": Int(getInt("sid")),
+    ]
+  }
+
   func destroy() {
     stopProgressTimer()
     if let mpv = mpv {
@@ -441,6 +532,79 @@ class ExpoMpvView: ExpoView {
       mpv_terminate_destroy(mpv)
       self.mpv = nil
     }
+  }
+
+  // MARK: - Font Configuration
+
+  /// Configure fonts for subtitle rendering.
+  ///
+  /// iOS 18+ changed system fonts (PingFang etc.) to Apple's HVGL variable font format,
+  /// which FreeType (used by libass) cannot parse. This means system CJK fonts are
+  /// unusable by libass even if CoreText can find them.
+  ///
+  /// Solution: bundle a standard OTF/TTF CJK font (Noto Sans CJK SC) that FreeType
+  /// can read, and point libass to it via sub-fonts-dir.
+  /// See: https://github.com/libass/libass/issues/912
+  ///      https://github.com/mpv-player/mpv/issues/14878
+  private func configureFonts(_ mpv: OpaquePointer) {
+    // Locate the bundled Noto Sans CJK SC font in the module's bundle
+    let fontFileName = "NotoSansCJKsc-Regular"
+    let fontFileExt = "otf"
+
+    // Search in all bundles (the font is in the ExpoMpv pod bundle)
+    var fontPath: String?
+    for bundle in Bundle.allBundles {
+      if let path = bundle.path(forResource: fontFileName, ofType: fontFileExt) {
+        fontPath = path
+        break
+      }
+    }
+
+    // Also check the main bundle's Frameworks
+    if fontPath == nil {
+      let frameworksPath = Bundle.main.bundlePath + "/Frameworks"
+      if let contents = try? FileManager.default.contentsOfDirectory(atPath: frameworksPath) {
+        for item in contents where item.hasSuffix(".framework") {
+          let bundlePath = frameworksPath + "/" + item
+          if let bundle = Bundle(path: bundlePath),
+             let path = bundle.path(forResource: fontFileName, ofType: fontFileExt) {
+            fontPath = path
+            break
+          }
+        }
+      }
+    }
+
+    guard let resolvedFontPath = fontPath else {
+      log("WARNING: Bundled font \(fontFileName).\(fontFileExt) not found in any bundle")
+      // Fallback: try auto font provider without bundled font
+      setOptionString("sub-font-provider", "auto")
+      setOptionString("sub-font", "sans-serif")
+      return
+    }
+
+    let fontsDir = (resolvedFontPath as NSString).deletingLastPathComponent
+    log("Font: \(resolvedFontPath)")
+
+    // Point libass to the directory containing our bundled font
+    setOptionString("sub-fonts-dir", fontsDir)
+
+    // auto = CoreText on Apple platforms (handles font name matching + fallback)
+    setOptionString("sub-font-provider", "auto")
+
+    // Default font for SRT / plain text subtitles
+    setOptionString("sub-font", "Noto Sans CJK SC")
+    setOptionString("sub-font-size", "40")
+    setOptionString("sub-codepage", "auto")
+
+    // ASS subtitles: don't force-override styles.
+    // When ASS references fonts like "Microsoft YaHei" that don't exist on iOS,
+    // CoreText + our bundled font provide fallback.
+    setOptionString("sub-ass-override", "no")
+    setOptionString("sub-ass-shaper", "simple")
+
+    // Auto-load external subtitles from same directory as video
+    setOptionString("sub-auto", "fuzzy")
   }
 
   // MARK: - MPV Helpers
@@ -499,6 +663,14 @@ class ExpoMpvView: ExpoView {
     var data: Double = 0
     mpv_get_property(mpv, name, MPV_FORMAT_DOUBLE, &data)
     return data
+  }
+
+  private func getString(_ name: String) -> String? {
+    guard mpv != nil else { return nil }
+    let cstr = mpv_get_property_string(mpv, name)
+    defer { mpv_free(cstr) }
+    guard let cstr = cstr else { return nil }
+    return String(cString: cstr)
   }
 
   private func getInt(_ name: String) -> Int64 {
