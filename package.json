@@ -1,6 +1,6 @@
 {
   "name": "expo-mpv",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "My new module",
   "main": "build/index.js",
   "types": "build/index.d.ts",
@@ -10,6 +10,7 @@
     "lint": "expo-module lint",
     "test": "expo-module test",
     "prepare": "expo-module prepare",
+    "postinstall": "bash ios/download-mpvkit.sh",
     "prepublishOnly": "expo-module prepublishOnly",
     "expo-module": "expo-module",
     "open:ios": "xed example/ios",
