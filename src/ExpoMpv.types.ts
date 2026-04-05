@@ -173,6 +173,8 @@ export type ExpoMpvViewRef = {
   reloadSubtitles: () => Promise<void>;
   /** Set subtitle delay in seconds (positive = later, negative = earlier). */
   setSubtitleDelay: (seconds: number) => Promise<void>;
+  /** Set an mpv property by name (string value). */
+  setPropertyString: (name: string, value: string) => Promise<void>;
   getPlaybackInfo: () => Promise<PlaybackInfo>;
   getTrackList: () => Promise<TrackInfo[]>;
   getCurrentTrackIds: () => Promise<CurrentTrackIds>;

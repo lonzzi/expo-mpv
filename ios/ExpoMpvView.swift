@@ -460,6 +460,15 @@ class ExpoMpvView: ExpoView {
     setDouble("sub-delay", seconds)
   }
 
+  func setPropertyString(_ name: String, _ value: String) {
+    guard mpv != nil else { return }
+    let result = mpv_set_property_string(mpv, name, value)
+    if result < 0 {
+      let errStr = String(cString: mpv_error_string(result))
+      log("ERROR: set property string '\(name)'='\(value)' failed: \(errStr)")
+    }
+  }
+
   func getPlaybackInfo() -> [String: Any] {
     let position = getDouble("time-pos")
     let duration = getDouble("duration")

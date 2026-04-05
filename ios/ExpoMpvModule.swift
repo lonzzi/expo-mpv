@@ -113,6 +113,10 @@ public class ExpoMpvModule: Module {
         view.setSubtitleDelay(seconds)
       }.runOnQueue(.main)
 
+      AsyncFunction("setPropertyString") { (view: ExpoMpvView, name: String, value: String) in
+        view.setPropertyString(name, value)
+      }.runOnQueue(.main)
+
       AsyncFunction("getPlaybackInfo") { (view: ExpoMpvView) -> [String: Any] in
         return view.getPlaybackInfo()
       }.runOnQueue(.main)

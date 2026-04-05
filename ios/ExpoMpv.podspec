@@ -50,6 +50,7 @@ Pod::Spec.new do |s|
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'OTHER_LDFLAGS' => '$(inherited) -ObjC',
+    'FRAMEWORK_SEARCH_PATHS' => '$(inherited) "${PODS_TARGET_SRCROOT}/Frameworks"',
   }
 
   s.source_files = "*.{h,m,mm,swift,hpp,cpp}"
