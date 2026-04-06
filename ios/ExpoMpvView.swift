@@ -16,6 +16,7 @@ class ExpoMpvView: ExpoView {
 
   private var isInitialized = false
   private var pendingSource: String?
+  private var pendingHwdec: String = "videotoolbox"
   private var progressTimer: Timer?
 
   // MARK: - Event Dispatchers
@@ -108,7 +109,7 @@ class ExpoMpvView: ExpoView {
     setOptionString("vo", "gpu-next")
     setOptionString("gpu-api", "vulkan")
     setOptionString("gpu-context", "moltenvk")
-    setOptionString("hwdec", "videotoolbox")
+    setOptionString("hwdec", pendingHwdec)
     #endif
 
     // General options
@@ -424,6 +425,13 @@ class ExpoMpvView: ExpoView {
     mpv_set_property_string(mpv, "loop-file", loop ? "inf" : "no")
   }
 
+  func setHwdec(_ mode: String) {
+    pendingHwdec = mode
+    if isInitialized, mpv != nil {
+      setPropertyString("hwdec", mode)
+    }
+  }
+
   func setSubtitleTrack(_ trackId: Int) {
     setInt("sid", Int64(trackId))
   }
@@ -530,6 +538,36 @@ class ExpoMpvView: ExpoView {
       "vid": Int(getInt("vid")),
       "aid": Int(getInt("aid")),
       "sid": Int(getInt("sid")),
+    ]
+  }
+
+  func getMediaInfo() -> [String: Any] {
+    guard mpv != nil else { return [:] }
+
+    let hwdec = getString("hwdec") ?? ""
+    let hwdecCurrent = getString("hwdec-current") ?? ""
+    let videoCodec = getString("video-codec") ?? ""
+    let audioCodec = getString("audio-codec-name") ?? ""
+    let width = getInt("video-params/w")
+    let height = getInt("video-params/h")
+    let fps = getDouble("container-fps")
+    let videoBitrate = getDouble("video-bitrate")
+    let audioBitrate = getDouble("audio-bitrate")
+    let pixelFormat = getString("video-params/pixelformat") ?? ""
+    let colorspace = getString("video-params/colormatrix") ?? ""
+
+    return [
+      "hwdec": hwdec,
+      "hwdecCurrent": hwdecCurrent,
+      "videoCodec": videoCodec,
+      "audioCodec": audioCodec,
+      "width": Int(width),
+      "height": Int(height),
+      "fps": fps.isFinite ? fps : 0,
+      "videoBitrate": videoBitrate.isFinite ? videoBitrate : 0,
+      "audioBitrate": audioBitrate.isFinite ? audioBitrate : 0,
+      "pixelFormat": pixelFormat,
+      "colorspace": colorspace,
     ]
   }
 

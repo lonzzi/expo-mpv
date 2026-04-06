@@ -32,6 +32,7 @@ const ExpoMpvView = forwardRef<ExpoMpvViewRef, ExpoMpvViewProps>((props, ref) =>
     getPlaybackInfo: () => nativeRef.current?.getPlaybackInfo(),
     getTrackList: () => nativeRef.current?.getTrackList(),
     getCurrentTrackIds: () => nativeRef.current?.getCurrentTrackIds(),
+    getMediaInfo: () => nativeRef.current?.getMediaInfo(),
   }));
 
   return <NativeView ref={nativeRef} {...props} />;

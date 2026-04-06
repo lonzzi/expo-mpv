@@ -71,6 +71,31 @@ export type CurrentTrackIds = {
   sid: number;
 };
 
+export type MediaInfo = {
+  /** Configured hardware decode mode (e.g. "videotoolbox", "mediacodec", "no") */
+  hwdec: string;
+  /** Actually active hardware decoder (empty string = software decoding) */
+  hwdecCurrent: string;
+  /** Video codec name (e.g. "h264", "hevc", "av1") */
+  videoCodec: string;
+  /** Audio codec name (e.g. "aac", "opus") */
+  audioCodec: string;
+  /** Video width in pixels */
+  width: number;
+  /** Video height in pixels */
+  height: number;
+  /** Video frame rate */
+  fps: number;
+  /** Video bitrate in bits per second */
+  videoBitrate: number;
+  /** Audio bitrate in bits per second */
+  audioBitrate: number;
+  /** Pixel format (e.g. "yuv420p", "nv12") */
+  pixelFormat: string;
+  /** Color space (e.g. "bt.709", "bt.2020-ncl") */
+  colorspace: string;
+};
+
 // MARK: - Module Events (non-view)
 
 export type ExpoMpvModuleEvents = {};
@@ -185,4 +210,5 @@ export type ExpoMpvViewRef = {
   getPlaybackInfo: () => Promise<PlaybackInfo>;
   getTrackList: () => Promise<TrackInfo[]>;
   getCurrentTrackIds: () => Promise<CurrentTrackIds>;
+  getMediaInfo: () => Promise<MediaInfo>;
 };

@@ -51,6 +51,12 @@ public class ExpoMpvModule: Module {
         view.setLooping(loop)
       }
 
+      Prop("hwdec") { (view: ExpoMpvView, hwdec: String?) in
+        if let hwdec = hwdec {
+          view.setHwdec(hwdec)
+        }
+      }
+
       // MARK: - Imperative Functions (called via ref)
 
       AsyncFunction("play") { (view: ExpoMpvView) in
@@ -127,6 +133,10 @@ public class ExpoMpvModule: Module {
 
       AsyncFunction("getCurrentTrackIds") { (view: ExpoMpvView) -> [String: Int] in
         return view.getCurrentTrackIds()
+      }.runOnQueue(.main)
+
+      AsyncFunction("getMediaInfo") { (view: ExpoMpvView) -> [String: Any] in
+        return view.getMediaInfo()
       }.runOnQueue(.main)
     }
   }

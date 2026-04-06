@@ -387,6 +387,36 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
         )
     }
 
+    fun getMediaInfo(): Map<String, Any> {
+        if (nativePtr == 0L) return emptyMap()
+
+        val hwdec = getPropertyString("hwdec") ?: ""
+        val hwdecCurrent = getPropertyString("hwdec-current") ?: ""
+        val videoCodec = getPropertyString("video-codec") ?: ""
+        val audioCodec = getPropertyString("audio-codec-name") ?: ""
+        val width = getPropertyLong("video-params/w").toInt()
+        val height = getPropertyLong("video-params/h").toInt()
+        val fps = getPropertyDouble("container-fps")
+        val videoBitrate = getPropertyDouble("video-bitrate")
+        val audioBitrate = getPropertyDouble("audio-bitrate")
+        val pixelFormat = getPropertyString("video-params/pixelformat") ?: ""
+        val colorspace = getPropertyString("video-params/colormatrix") ?: ""
+
+        return mapOf(
+            "hwdec" to hwdec,
+            "hwdecCurrent" to hwdecCurrent,
+            "videoCodec" to videoCodec,
+            "audioCodec" to audioCodec,
+            "width" to width,
+            "height" to height,
+            "fps" to (if (fps.isFinite()) fps else 0.0),
+            "videoBitrate" to (if (videoBitrate.isFinite()) videoBitrate else 0.0),
+            "audioBitrate" to (if (audioBitrate.isFinite()) audioBitrate else 0.0),
+            "pixelFormat" to pixelFormat,
+            "colorspace" to colorspace
+        )
+    }
+
     // MARK: - Property Helpers
 
     private fun getPropertyDouble(name: String): Double {

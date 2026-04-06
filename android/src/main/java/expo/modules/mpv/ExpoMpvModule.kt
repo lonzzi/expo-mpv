@@ -129,6 +129,10 @@ class ExpoMpvModule : Module() {
             AsyncFunction("getCurrentTrackIds") { view: ExpoMpvView ->
                 view.getCurrentTrackIds()
             }
+
+            AsyncFunction("getMediaInfo") { view: ExpoMpvView ->
+                view.getMediaInfo()
+            }
         }
     }
 }

@@ -8,10 +8,12 @@ import type {
   EndEvent,
   BufferEvent,
   TrackInfo,
+  MediaInfo,
 } from "expo-mpv";
 import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -40,19 +42,14 @@ const TEST_VIDEOS: TestVideo[] = [
     url: "https://media.w3.org/2010/05/sintel/trailer.mp4",
   },
   {
-    label: "Tears of Steel",
-    tags: ["4K", "SDR"],
-    url: "https://demo.castlabs.com/tmp/TOS/tears_of_steel_1080p.mp4",
-  },
-  {
     label: "HDR10 Demo",
-    tags: ["4K", "HDR"],
-    url: "https://cdn.bitmovin.com/content/assets/art-of-motion-dash-hls-progressive/MI201109210004_mpeg-4_hd_high_1080p25.mp4",
+    tags: ["4K", "HDR", "HLS"],
+    url: "https://devstreaming-cdn.apple.com/videos/streaming/examples/adv_dv_atmos/main.m3u8",
   },
   {
     label: "Dolby Vision",
-    tags: ["4K", "DV"],
-    url: "https://raw.githubusercontent.com/nicholasgasior/nicholasgasior/refs/heads/main/assets/dolby-vision-sample.mp4",
+    tags: ["4K", "DV", "HLS"],
+    url: "https://devstreaming-cdn.apple.com/videos/streaming/examples/adv_dv_atmos/main.m3u8/../Job2dae5735-d6ca-48ca-91be-0ec0bead535c-107702578-hls_bundle_hdrhls797_dolbyvision/prog_index.m3u8",
   },
   {
     label: "HEVC HDR",
@@ -96,6 +93,8 @@ function AppInter() {
   const [source, setSource] = useState(TEST_VIDEOS[1].url);
   const [inputUrl, setInputUrl] = useState("");
   const [currentVideoIndex, setCurrentVideoIndex] = useState(1);
+  const [isSourceLoading, setIsSourceLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState("Loading stream...");
   const [tracks, setTracks] = useState<TracksByType>({
     video: [],
     audio: [],
@@ -106,6 +105,19 @@ function AppInter() {
     aid: 0,
     sid: 0,
   });
+  const [hwdecMode, setHwdecMode] = useState(
+    Platform.OS === "ios" ? "videotoolbox" : "mediacodec"
+  );
+  const [mediaInfo, setMediaInfo] = useState<MediaInfo | null>(null);
+
+  const refreshMediaInfo = useCallback(async () => {
+    try {
+      const info = await playerRef.current?.getMediaInfo();
+      if (info) setMediaInfo(info);
+    } catch (e) {
+      console.log("refreshMediaInfo error:", e);
+    }
+  }, []);
 
   const refreshTracks = useCallback(async () => {
     try {
@@ -124,7 +136,8 @@ function AppInter() {
     } catch (e) {
       console.log("refreshTracks error:", e);
     }
-  }, []);
+    refreshMediaInfo();
+  }, [refreshMediaInfo]);
 
   const onPlaybackStateChange = useCallback(
     ({ nativeEvent }: { nativeEvent: PlaybackStateChangeEvent }) => {
@@ -146,6 +159,8 @@ function AppInter() {
       setDuration(nativeEvent.duration);
       setVideoSize({ width: nativeEvent.width, height: nativeEvent.height });
       setError(null);
+      setIsSourceLoading(false);
+      setLoadingMessage("Loading stream...");
       setTimeout(() => refreshTracks(), 500);
     },
     [refreshTracks]
@@ -154,6 +169,7 @@ function AppInter() {
   const onError = useCallback(
     ({ nativeEvent }: { nativeEvent: ErrorEvent }) => {
       setError(nativeEvent.error);
+      setIsSourceLoading(false);
     },
     []
   );
@@ -168,6 +184,18 @@ function AppInter() {
     },
     []
   );
+
+  const beginSourceLoad = useCallback((message: string) => {
+    setIsSourceLoading(true);
+    setLoadingMessage(message);
+    setIsBuffering(false);
+    setPosition(0);
+    setDuration(0);
+    setVideoSize({ width: 0, height: 0 });
+    setCurrentTrackIds({ vid: 0, aid: 0, sid: 0 });
+    setTracks({ video: [], audio: [], sub: [] });
+    setMediaInfo(null);
+  }, []);
 
   const formatTime = (seconds: number): string => {
     if (!isFinite(seconds) || seconds < 0) return "00:00";
@@ -195,21 +223,42 @@ function AppInter() {
     playerRef.current?.setMuted(newMuted);
   };
 
+  const hwdecOptions =
+    Platform.OS === "ios"
+      ? ["videotoolbox", "videotoolbox-copy", "no"]
+      : ["mediacodec", "mediacodec-copy", "no"];
+
+  const cycleHwdec = () => {
+    const nextIndex = (hwdecOptions.indexOf(hwdecMode) + 1) % hwdecOptions.length;
+    const newMode = hwdecOptions[nextIndex];
+    setHwdecMode(newMode);
+    playerRef.current?.setPropertyString("hwdec", newMode);
+    setTimeout(() => refreshMediaInfo(), 500);
+  };
+
+  const formatBitrate = (bps: number): string => {
+    if (bps <= 0) return "N/A";
+    if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} Mbps`;
+    if (bps >= 1_000) return `${(bps / 1_000).toFixed(0)} Kbps`;
+    return `${bps.toFixed(0)} bps`;
+  };
+
   const selectVideo = (index: number) => {
     const video = TEST_VIDEOS[index];
+    beginSourceLoad(`Switching to ${video.label}...`);
     setCurrentVideoIndex(index);
     setSource(video.url);
     setError(null);
-    setTracks({ video: [], audio: [], sub: [] });
     setInputUrl("");
   };
 
   const handleLoadUrl = () => {
-    if (!inputUrl.trim()) return;
+    const url = inputUrl.trim();
+    if (!url) return;
+    beginSourceLoad("Loading custom URL...");
     setCurrentVideoIndex(-1);
-    setSource(inputUrl);
+    setSource(url);
     setError(null);
-    setTracks({ video: [], audio: [], sub: [] });
   };
 
   const selectTrack = (type: "audio" | "sub" | "video", id: number) => {
@@ -313,6 +362,7 @@ function AppInter() {
           <ExpoMpvView
             ref={playerRef}
             source={source}
+            hwdec={hwdecMode}
             style={styles.player}
             onPlaybackStateChange={onPlaybackStateChange}
             onProgress={onProgress}
@@ -323,9 +373,19 @@ function AppInter() {
             onSeek={() => {}}
             onVolumeChange={() => {}}
           />
-          {isBuffering && (
-            <View style={styles.bufferingOverlay}>
-              <ActivityIndicator size="large" color="#fff" />
+          {(isSourceLoading || isBuffering) && (
+            <View style={styles.loadingOverlay}>
+              <View style={styles.loadingCard}>
+                <ActivityIndicator size="large" color="#fff" />
+                <Text style={styles.loadingTitle}>
+                  {isSourceLoading ? loadingMessage : "Buffering stream..."}
+                </Text>
+                <Text style={styles.loadingSubtitle}>
+                  {isSourceLoading
+                    ? "Waiting for metadata and first frame"
+                    : "Fetching more media data"}
+                </Text>
+              </View>
             </View>
           )}
         </View>
@@ -430,6 +490,15 @@ function AppInter() {
 
           <TouchableOpacity
             style={styles.secondaryBtn}
+            onPress={cycleHwdec}
+          >
+            <Text style={styles.secondaryBtnText}>
+              HW: {hwdecMode === "no" ? "off" : hwdecMode}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryBtn}
             onPress={refreshTracks}
           >
             <Text style={styles.secondaryBtnText}>Refresh</Text>
@@ -451,6 +520,88 @@ function AppInter() {
             <Text style={styles.loadBtnText}>Load</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Media Info Panel */}
+        {mediaInfo && (
+          <View style={styles.mediaInfoPanel}>
+            <Text style={styles.trackPanelTitle}>Media Info</Text>
+
+            <View style={styles.mediaInfoGrid}>
+              <View style={styles.mediaInfoRow}>
+                <Text style={styles.mediaInfoLabel}>Hardware Decode</Text>
+                <View style={styles.mediaInfoValueRow}>
+                  <View
+                    style={[
+                      styles.hwdecDot,
+                      { backgroundColor: mediaInfo.hwdecCurrent ? "#4ade80" : "#f87171" },
+                    ]}
+                  />
+                  <Text style={styles.mediaInfoValue}>
+                    {mediaInfo.hwdecCurrent || "Software"}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.mediaInfoRow}>
+                <Text style={styles.mediaInfoLabel}>Video Codec</Text>
+                <Text style={styles.mediaInfoValue}>
+                  {mediaInfo.videoCodec || "N/A"}
+                </Text>
+              </View>
+
+              <View style={styles.mediaInfoRow}>
+                <Text style={styles.mediaInfoLabel}>Resolution</Text>
+                <Text style={styles.mediaInfoValue}>
+                  {mediaInfo.width > 0
+                    ? `${mediaInfo.width}x${mediaInfo.height}`
+                    : "N/A"}
+                </Text>
+              </View>
+
+              <View style={styles.mediaInfoRow}>
+                <Text style={styles.mediaInfoLabel}>Frame Rate</Text>
+                <Text style={styles.mediaInfoValue}>
+                  {mediaInfo.fps > 0 ? `${mediaInfo.fps.toFixed(2)} fps` : "N/A"}
+                </Text>
+              </View>
+
+              <View style={styles.mediaInfoRow}>
+                <Text style={styles.mediaInfoLabel}>Video Bitrate</Text>
+                <Text style={styles.mediaInfoValue}>
+                  {formatBitrate(mediaInfo.videoBitrate)}
+                </Text>
+              </View>
+
+              <View style={styles.mediaInfoRow}>
+                <Text style={styles.mediaInfoLabel}>Audio Codec</Text>
+                <Text style={styles.mediaInfoValue}>
+                  {mediaInfo.audioCodec || "N/A"}
+                </Text>
+              </View>
+
+              <View style={styles.mediaInfoRow}>
+                <Text style={styles.mediaInfoLabel}>Audio Bitrate</Text>
+                <Text style={styles.mediaInfoValue}>
+                  {formatBitrate(mediaInfo.audioBitrate)}
+                </Text>
+              </View>
+
+              <View style={styles.mediaInfoRow}>
+                <Text style={styles.mediaInfoLabel}>Pixel Format</Text>
+                <Text style={styles.mediaInfoValue}>
+                  {mediaInfo.pixelFormat || "N/A"}
+                </Text>
+              </View>
+
+              <View style={styles.mediaInfoRow}>
+                <Text style={styles.mediaInfoLabel}>Color Space</Text>
+                <Text style={styles.mediaInfoValue}>
+                  {mediaInfo.colorspace || "N/A"}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Track Info Debug Panel */}
         {hasAnyTracks && (
@@ -717,11 +868,36 @@ const styles = StyleSheet.create({
   player: {
     flex: 1,
   },
-  bufferingOverlay: {
+  loadingOverlay: {
     ...StyleSheet.absoluteFill,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(0,0,0,0.48)",
+    paddingHorizontal: 24,
+  },
+  loadingCard: {
+    minWidth: 220,
+    maxWidth: 280,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    borderRadius: 16,
+    backgroundColor: "rgba(17,24,39,0.88)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+  },
+  loadingTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+    marginTop: 12,
+    textAlign: "center",
+  },
+  loadingSubtitle: {
+    color: "#b6bfd4",
+    fontSize: 12,
+    marginTop: 6,
+    textAlign: "center",
   },
   errorContainer: {
     marginHorizontal: 20,
@@ -850,6 +1026,46 @@ const styles = StyleSheet.create({
     backgroundColor: "#1a1a2e",
     borderRadius: 12,
     padding: 16,
+  },
+  // Media info panel styles
+  mediaInfoPanel: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    backgroundColor: "#1a1a2e",
+    borderRadius: 12,
+    padding: 16,
+  },
+  mediaInfoGrid: {
+    gap: 8,
+  },
+  mediaInfoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#333",
+  },
+  mediaInfoLabel: {
+    color: "#888",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  mediaInfoValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  mediaInfoValue: {
+    color: "#ddd",
+    fontSize: 12,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+  },
+  hwdecDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   trackPanelTitle: {
     color: "#fff",

@@ -10,12 +10,15 @@ On iOS it uses [MPVKit](https://github.com/mpvkit/MPVKit). On Android it integra
 - Hardware-accelerated video playback via libmpv
 - iOS Metal rendering via MoltenVK (Vulkan -> Metal)
 - Android `SurfaceView` rendering with `gpu` + `gpu-context=android`
+- Runtime hardware decode selection (`videotoolbox` / `mediacodec` / software)
+- Media info inspection: codec, resolution, fps, bitrate, hwdec status, pixel format, colorspace
 - Play/pause, seek, speed, volume, mute, loop
 - Subtitle track selection (embedded + external)
 - Audio track selection
 - External subtitle loading (`sub-add`)
-- Runtime `hwdec` selection
+- Runtime `hwdec` selection (iOS: `videotoolbox`, Android: `mediacodec`)
 - Track inspection via `getTrackList()` and `getCurrentTrackIds()`
+- Media info via `getMediaInfo()` (codec, resolution, fps, bitrate, hwdec status)
 - Progress, buffering, error, and playback state events
 - CJK subtitle support with bundled Noto Sans CJK SC font
 
@@ -131,6 +134,9 @@ playerRef.current?.setPropertyString("cache", "yes");
 const info = await playerRef.current?.getPlaybackInfo();
 const tracks = await playerRef.current?.getTrackList();
 const currentTracks = await playerRef.current?.getCurrentTrackIds();
+const media = await playerRef.current?.getMediaInfo();
+// media.hwdecCurrent, media.videoCodec, media.width, media.height,
+// media.fps, media.videoBitrate, media.pixelFormat, etc.
 ```
 
 ### Props
@@ -143,7 +149,7 @@ const currentTracks = await playerRef.current?.getCurrentTrackIds();
 | `volume` | `number` | Volume 0-100 (default: 100) |
 | `muted` | `boolean` | Mute audio |
 | `loop` | `boolean` | Loop current file |
-| `hwdec` | `string` | Hardware decode mode. Defaults to `auto` on iOS and `mediacodec` on Android |
+| `hwdec` | `string` | Hardware decode mode. Defaults to `videotoolbox` on iOS and `mediacodec` on Android |
 
 ### Events
 
@@ -181,6 +187,7 @@ const currentTracks = await playerRef.current?.getCurrentTrackIds();
 - `getPlaybackInfo()`
 - `getTrackList()`
 - `getCurrentTrackIds()`
+- `getMediaInfo()` — returns codec, resolution, fps, bitrate, hwdec status, pixel format, colorspace
 
 ### API changes
 
@@ -193,6 +200,7 @@ If you used an earlier iOS-only version, this release adds and/or formalizes:
 - `reloadSubtitles()`
 - `setPropertyString(name, value)`
 - `getCurrentTrackIds()`
+- `getMediaInfo()` for codec, resolution, fps, bitrate, hwdec status
 
 The README examples now assume the shared iOS/Android API surface rather than an iOS-only integration flow.
 
