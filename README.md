@@ -189,29 +189,6 @@ const media = await playerRef.current?.getMediaInfo();
 - `getCurrentTrackIds()`
 - `getMediaInfo()` — returns codec, resolution, fps, bitrate, hwdec status, pixel format, colorspace
 
-### API changes
-
-If you used an earlier iOS-only version, this release adds and/or formalizes:
-
-- Android support
-- `hwdec` prop for platform-specific hardware decode control
-- `stop()`
-- `removeSubtitle(trackId)`
-- `reloadSubtitles()`
-- `setPropertyString(name, value)`
-- `getCurrentTrackIds()`
-- `getMediaInfo()` for codec, resolution, fps, bitrate, hwdec status
-
-The README examples now assume the shared iOS/Android API surface rather than an iOS-only integration flow.
-
-### Migration notes
-
-- Add `"expo-mpv"` to your Expo plugins list if you previously relied on manual native setup
-- Keep `expo-build-properties` for the iOS 16 deployment target
-- Re-run `npx expo prebuild` after upgrading so the plugin can wire native changes into both platforms
-- Android native dependencies are now fetched as part of the build, so CI should allow Gradle network access on first build
-- If you wrapped the player with platform checks because Android was unsupported, you can simplify that logic once your Android app is configured
-
 ## CJK Subtitle Rendering
 
 This module bundles [Noto Sans CJK SC](https://github.com/notofonts/noto-cjk) (SIL Open Font License) for Chinese/Japanese/Korean subtitle rendering.
@@ -241,18 +218,6 @@ React Native (JS)
 ```
 
 On simulator, `vo=gpu` is used instead of `vo=gpu-next` to avoid a crash in `MTLSimDriver` caused by XPC shared memory size limits when libplacebo uploads video frame textures.
-
-## License transition
-
-This project is now licensed under `GPL-3.0-only` instead of MIT.
-
-That means:
-
-- source code and derivative distributions must remain under GPLv3-compatible terms
-- if you redistribute a modified version, you must also provide the corresponding source under GPLv3
-- downstream consumers should review compatibility before bundling this module into closed-source products
-
-Bundled third-party assets and dependencies may carry their own licenses. For example, the bundled Noto font remains under the SIL Open Font License.
 
 ## License
 

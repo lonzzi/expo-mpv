@@ -3,6 +3,7 @@ package expo.modules.mpv
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -30,7 +31,7 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
     private var nativePtr: Long = 0
     private var isInitialized = false
     private var pendingSource: String? = null
-    private var pendingHwdec: String = "mediacodec"
+    private var pendingHwdec: String = if (isEmulator()) "no" else "mediacodec"
     private val mainHandler = Handler(Looper.getMainLooper())
     private var progressRunnable: Runnable? = null
 
@@ -145,7 +146,13 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
         MPVLib.nativeSetOptionString(nativePtr, "vo", "gpu")
         MPVLib.nativeSetOptionString(nativePtr, "gpu-context", "android")
         MPVLib.nativeSetOptionString(nativePtr, "hwdec", pendingHwdec)
-        MPVLib.nativeSetOptionString(nativePtr, "hwdec-codecs", "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
+        if (pendingHwdec != "no") {
+            MPVLib.nativeSetOptionString(nativePtr, "hwdec-codecs", "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
+        }
+
+        if (isEmulator()) {
+            android.util.Log.w("ExpoMpv", "Emulator detected, hardware decoding disabled (using software decoding)")
+        }
 
         // General
         MPVLib.nativeSetOptionString(nativePtr, "force-window", "yes")
@@ -454,5 +461,25 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
     private fun commandArray(cmd: String, args: List<String>) {
         if (nativePtr == 0L) return
         MPVLib.nativeCommand(nativePtr, (listOf(cmd) + args).toTypedArray())
+    }
+
+    companion object {
+        private fun isEmulator(): Boolean {
+            return (Build.FINGERPRINT.startsWith("generic")
+                    || Build.FINGERPRINT.startsWith("unknown")
+                    || Build.MODEL.contains("google_sdk")
+                    || Build.MODEL.contains("Emulator")
+                    || Build.MODEL.contains("Android SDK built for x86")
+                    || Build.BOARD == "QC_Reference_Phone"
+                    || Build.MANUFACTURER.contains("Genymotion")
+                    || Build.HOST.startsWith("Build")
+                    || Build.BRAND.startsWith("generic")
+                    || Build.DEVICE.startsWith("generic")
+                    || Build.PRODUCT == "google_sdk"
+                    || Build.PRODUCT.startsWith("sdk")
+                    || Build.PRODUCT.endsWith("_cf")
+                    || Build.HARDWARE.contains("goldfish")
+                    || Build.HARDWARE.contains("ranchu"))
+        }
     }
 }
