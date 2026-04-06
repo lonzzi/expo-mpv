@@ -56,5 +56,12 @@ npm-debug.log
 yarn-debug.log
 yarn-error.log
 
+# Plugin build output
+plugin/build/
+
 # Expo
 .expo/*
+
+release.sh
+
+/**/*.tsbuildinfo

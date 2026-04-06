@@ -19,13 +19,6 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
 
-  # Download MPVKit xcframeworks if not present
-  s.script_phase = {
-    :name => 'Download MPVKit XCFrameworks',
-    :script => 'bash "${PODS_TARGET_SRCROOT}/download-mpvkit.sh"',
-    :execution_position => :before_compile,
-  }
-
   # System frameworks required by MPVKit
   s.frameworks = [
     'Metal',

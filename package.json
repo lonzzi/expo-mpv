@@ -10,8 +10,7 @@
     "lint": "expo-module lint",
     "test": "expo-module test",
     "prepare": "expo-module prepare",
-    "postinstall": "bash ios/download-mpvkit.sh",
-    "prepublishOnly": "expo-module prepublishOnly",
+    "prepublishOnly": "expo-module prepublishOnly && npx tsc --project plugin/tsconfig.json",
     "expo-module": "expo-module",
     "open:ios": "xed example/ios",
     "open:android": "open -a \"Android Studio\" example/android"
