@@ -109,6 +109,13 @@ export type ExpoMpvViewProps = {
   loop?: boolean;
 
   /**
+   * Hardware decoding mode. Default is 'mediacodec' on Android, 'auto' on iOS.
+   * Use 'no' to force software decoding, 'mediacodec' for Android HW decode,
+   * 'mediacodec-copy' for HW decode with CPU copy.
+   */
+  hwdec?: string;
+
+  /**
    * Called when playback state changes (play/pause).
    */
   onPlaybackStateChange?: (event: { nativeEvent: PlaybackStateChangeEvent }) => void;

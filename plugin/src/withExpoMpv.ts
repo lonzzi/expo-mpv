@@ -101,7 +101,8 @@ async function downloadMPVKit(frameworksDir: string): Promise<void> {
 }
 
 const withExpoMpv: ConfigPlugin = (config) => {
-  return withDangerousMod(config, [
+  // iOS: download MPVKit xcframeworks during prebuild
+  config = withDangerousMod(config, [
     'ios',
     async (config) => {
       const packageDir = path.dirname(require.resolve('expo-mpv/package.json'));
@@ -110,6 +111,12 @@ const withExpoMpv: ConfigPlugin = (config) => {
       return config;
     },
   ]);
+
+  // Android: native libraries are downloaded automatically by Gradle build task
+  // (see android/build.gradle → downloadMpvNativeLibs task)
+  // No separate script or plugin step needed!
+
+  return config;
 };
 
 export default withExpoMpv;

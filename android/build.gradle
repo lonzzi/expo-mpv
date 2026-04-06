@@ -6,13 +6,120 @@ plugins {
 group = 'expo.modules.mpv'
 version = '0.1.0'
 
+// ---- mpv-android release tag ----
+def mpvAndroidTag = "2026-03-22"
+def mpvAbis = ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']
+def mpvLibsDir = file("src/main/jniLibs")
+
 android {
   namespace "expo.modules.mpv"
   defaultConfig {
     versionCode 1
     versionName "0.1.0"
+    minSdk 21
+    ndk {
+      abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+    }
+  }
+  externalNativeBuild {
+    ndkBuild {
+      path "src/main/jni/Android.mk"
+    }
+  }
+  sourceSets {
+    main {
+      jniLibs.srcDirs = ['src/main/jniLibs']
+    }
   }
   lintOptions {
     abortOnError false
   }
+}
+
+// ---- Gradle task: download mpv native libs ----
+// Automatically runs before ndk-build. No separate script needed.
+
+task downloadMpvNativeLibs {
+  def versionFile = file("${mpvLibsDir}/.version")
+
+  outputs.dir(mpvLibsDir)
+
+  doLast {
+    if (versionFile.exists() && versionFile.text.trim() == mpvAndroidTag) {
+      logger.lifecycle("[expo-mpv] Native libs already up-to-date (${mpvAndroidTag})")
+      return
+    }
+
+    logger.lifecycle("[expo-mpv] Downloading mpv native libraries (${mpvAndroidTag})...")
+
+    mpvAbis.each { abi ->
+      def destDir = file("${mpvLibsDir}/${abi}")
+      def apkName = "app-default-${abi}-release.apk"
+      def url = "https://github.com/mpv-android/mpv-android/releases/download/${mpvAndroidTag}/${apkName}"
+      def tmpDir = file("${buildDir}/tmp/mpv-download/${abi}")
+
+      destDir.mkdirs()
+      tmpDir.mkdirs()
+
+      def apkFile = file("${tmpDir}/${apkName}")
+      logger.lifecycle("[expo-mpv]   ${abi}: downloading...")
+
+      ant.get(src: url, dest: apkFile)
+
+      // APK is a ZIP — extract .so files, flatten directory structure
+      copy {
+        from(zipTree(apkFile)) {
+          include "lib/${abi}/*.so"
+          exclude "lib/${abi}/libplayer.so" // mpv-android's JNI bridge, not needed
+        }
+        eachFile { details ->
+          // lib/x86_64/libfoo.so → libfoo.so
+          details.relativePath = new RelativePath(true, details.name)
+        }
+        into(destDir)
+      }
+
+      tmpDir.deleteDir()
+      logger.lifecycle("[expo-mpv]   ${abi}: done")
+    }
+
+    versionFile.text = mpvAndroidTag
+    logger.lifecycle("[expo-mpv] All mpv native libraries downloaded.")
+  }
+}
+
+// Ensure download runs before any ndk-build or Java compile
+afterEvaluate {
+  tasks.matching { it.name.contains('ExternalNativeBuild') || it.name.contains('ndkBuild') }.configureEach {
+    dependsOn downloadMpvNativeLibs
+  }
+  tasks.named('preBuild').configure {
+    dependsOn downloadMpvNativeLibs
+  }
+
+  // mpv-android's libc++_shared.so has newer symbols (e.g. std::from_chars for float)
+  // than the NDK version bundled by React Native. After the app merges native libs,
+  // replace the merged libc++_shared.so with our version so libmpv.so can load.
+  def appProject = rootProject.subprojects.find { it.plugins.hasPlugin('com.android.application') }
+  if (appProject != null) {
+    appProject.tasks.matching { it.name.contains('merge') && it.name.contains('NativeLibs') }.configureEach {
+      doLast {
+        def outputDir = outputs.files.files.find { it.path.contains('merged_native_libs') }
+        if (outputDir != null) {
+          mpvAbis.each { abi ->
+            def srcFile = file("${mpvLibsDir}/${abi}/libc++_shared.so")
+            def destFile = new File(outputDir, "lib/${abi}/libc++_shared.so")
+            if (srcFile.exists() && destFile.exists()) {
+              ant.copy(file: srcFile, tofile: destFile, overwrite: true)
+              logger.lifecycle("[expo-mpv] Replaced libc++_shared.so for ${abi} (mpv-android version)")
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+dependencies {
+  compileOnly 'androidx.lifecycle:lifecycle-common:2.7.0'
 }

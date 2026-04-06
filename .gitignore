@@ -38,13 +38,17 @@ local.properties
 android.iml
 android/app/libs
 android/keystores/debug.keystore
+android/build/
 
 # Cocoapods
 #
 example/ios/Pods
 
-# MPVKit xcframeworks (downloaded by ios/download-mpvkit.sh)
+# MPVKit xcframeworks
 ios/Frameworks/
+
+# MPVKit Android native libraries (downloaded by Gradle build task)
+android/src/main/jniLibs/
 
 # Ruby
 example/vendor/

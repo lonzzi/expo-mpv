@@ -1,17 +1,21 @@
 # expo-mpv
 
-An Expo module wrapping [libmpv](https://mpv.io/) for video playback on iOS, powered by [MPVKit](https://github.com/mpvkit/MPVKit).
+An Expo module wrapping [libmpv](https://mpv.io/) for advanced video playback on iOS and Android.
 
-> **Note:** Currently only **iOS** is supported. Android support is planned.
+On iOS it uses [MPVKit](https://github.com/mpvkit/MPVKit). On Android it integrates native `libmpv` binaries from the [mpv-android](https://github.com/mpv-android/mpv-android) releases and wires them into an Expo Module view/component API.
 
 ## Features
 
-- Hardware-accelerated video playback via libmpv + VideoToolbox
-- Metal rendering via MoltenVK (Vulkan → Metal)
+- iOS and Android support
+- Hardware-accelerated video playback via libmpv
+- iOS Metal rendering via MoltenVK (Vulkan -> Metal)
+- Android `SurfaceView` rendering with `gpu` + `gpu-context=android`
 - Play/pause, seek, speed, volume, mute, loop
 - Subtitle track selection (embedded + external)
 - Audio track selection
 - External subtitle loading (`sub-add`)
+- Runtime `hwdec` selection
+- Track inspection via `getTrackList()` and `getCurrentTrackIds()`
 - Progress, buffering, error, and playback state events
 - CJK subtitle support with bundled Noto Sans CJK SC font
 
@@ -21,17 +25,20 @@ An Expo module wrapping [libmpv](https://mpv.io/) for video playback on iOS, pow
 npx expo install expo-mpv
 ```
 
-This package requires `expo-build-properties` to set the iOS deployment target to 16.0:
+This package ships an Expo config plugin and is intended to be used in a custom dev client / prebuild workflow.
+
+If your app does not already use `expo-build-properties`, install it as well:
 
 ```bash
 npx expo install expo-build-properties
 ```
 
-Add to your `app.json`:
+Add both plugins to your `app.json` / `app.config.ts`:
 
 ```json
 {
   "plugins": [
+    "expo-mpv",
     [
       "expo-build-properties",
       {
@@ -44,16 +51,34 @@ Add to your `app.json`:
 }
 ```
 
-### MPVKit XCFrameworks
-
-Before building, download the pre-built MPVKit xcframeworks:
+Then run:
 
 ```bash
-cd node_modules/expo-mpv/ios
-bash download-mpvkit.sh
+npx expo prebuild
 ```
 
-This downloads ~28 xcframeworks (libmpv, FFmpeg, MoltenVK, libass, etc.) from the [MPVKit releases](https://github.com/mpvkit/MPVKit/releases).
+### What the plugin does
+
+- iOS: downloads the required MPVKit XCFrameworks during prebuild
+- Android: Gradle downloads the `libmpv` native libraries automatically before build
+
+There is no separate Android setup script to run.
+
+### iOS notes
+
+- Minimum deployment target: iOS 16.0
+- The plugin downloads MPVKit dependencies into `node_modules/expo-mpv/ios/Frameworks`
+- The first prebuild / native build can take a while because the media stack is large
+
+### Android notes
+
+- Minimum SDK: Android 21
+- Supported ABIs: `armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`
+- `libmpv` shared libraries are downloaded from `mpv-android` releases during Gradle build
+- The module replaces merged `libc++_shared.so` with the `mpv-android` version so `libmpv.so` can load correctly at runtime
+- Default hardware decode mode on Android is `mediacodec`
+
+If you use network streams on Android, make sure your app networking/security setup allows them as usual for your project.
 
 ## Usage
 
@@ -98,10 +123,14 @@ playerRef.current?.setMuted(true);
 playerRef.current?.setSubtitleTrack(2);
 playerRef.current?.setAudioTrack(1);
 playerRef.current?.addSubtitle("https://example.com/subs.srt");
+playerRef.current?.removeSubtitle(3);
+playerRef.current?.reloadSubtitles();
 playerRef.current?.setSubtitleDelay(-0.5); // seconds
+playerRef.current?.setPropertyString("cache", "yes");
 
 const info = await playerRef.current?.getPlaybackInfo();
 const tracks = await playerRef.current?.getTrackList();
+const currentTracks = await playerRef.current?.getCurrentTrackIds();
 ```
 
 ### Props
@@ -114,6 +143,7 @@ const tracks = await playerRef.current?.getTrackList();
 | `volume` | `number` | Volume 0-100 (default: 100) |
 | `muted` | `boolean` | Mute audio |
 | `loop` | `boolean` | Loop current file |
+| `hwdec` | `string` | Hardware decode mode. Defaults to `auto` on iOS and `mediacodec` on Android |
 
 ### Events
 
@@ -127,6 +157,52 @@ const tracks = await playerRef.current?.getTrackList();
 | `onBuffer` | `{ isBuffering }` | Buffering state changed |
 | `onSeek` | `{}` | Seek completed |
 | `onVolumeChange` | `{ volume, muted }` | Volume/mute changed |
+
+### Imperative API
+
+`ExpoMpvViewRef` exposes:
+
+- `play()`
+- `pause()`
+- `togglePlay()`
+- `stop()`
+- `seekTo(position)`
+- `seekBy(offset)`
+- `setSpeed(speed)`
+- `setVolume(volume)`
+- `setMuted(muted)`
+- `setSubtitleTrack(trackId)`
+- `setAudioTrack(trackId)`
+- `addSubtitle(path, flag?, title?, lang?)`
+- `removeSubtitle(trackId)`
+- `reloadSubtitles()`
+- `setSubtitleDelay(seconds)`
+- `setPropertyString(name, value)`
+- `getPlaybackInfo()`
+- `getTrackList()`
+- `getCurrentTrackIds()`
+
+### API changes
+
+If you used an earlier iOS-only version, this release adds and/or formalizes:
+
+- Android support
+- `hwdec` prop for platform-specific hardware decode control
+- `stop()`
+- `removeSubtitle(trackId)`
+- `reloadSubtitles()`
+- `setPropertyString(name, value)`
+- `getCurrentTrackIds()`
+
+The README examples now assume the shared iOS/Android API surface rather than an iOS-only integration flow.
+
+### Migration notes
+
+- Add `"expo-mpv"` to your Expo plugins list if you previously relied on manual native setup
+- Keep `expo-build-properties` for the iOS 16 deployment target
+- Re-run `npx expo prebuild` after upgrading so the plugin can wire native changes into both platforms
+- Android native dependencies are now fetched as part of the build, so CI should allow Gradle network access on first build
+- If you wrapped the player with platform checks because Android was unsupported, you can simplify that logic once your Android app is configured
 
 ## CJK Subtitle Rendering
 
@@ -151,14 +227,25 @@ React Native (JS)
   └─ ExpoMpvView (native view)
        └─ mpv (libmpv C API)
             ├─ FFmpeg (demuxing, decoding)
-            ├─ VideoToolbox (hardware decoding)
-            ├─ libplacebo → Vulkan → MoltenVK → Metal (rendering, device only)
-            ├─ gpu → Vulkan → MoltenVK → Metal (rendering, simulator)
+            ├─ iOS: VideoToolbox + MoltenVK + Metal
+            ├─ Android: MediaCodec + SurfaceView
             └─ libass + FreeType + Noto Sans CJK (subtitle rendering)
 ```
 
 On simulator, `vo=gpu` is used instead of `vo=gpu-next` to avoid a crash in `MTLSimDriver` caused by XPC shared memory size limits when libplacebo uploads video frame textures.
 
+## License transition
+
+This project is now licensed under `GPL-3.0-only` instead of MIT.
+
+That means:
+
+- source code and derivative distributions must remain under GPLv3-compatible terms
+- if you redistribute a modified version, you must also provide the corresponding source under GPLv3
+- downstream consumers should review compatibility before bundling this module into closed-source products
+
+Bundled third-party assets and dependencies may carry their own licenses. For example, the bundled Noto font remains under the SIL Open Font License.
+
 ## License
 
-[MIT](./LICENSE)
+[GPL-3.0](./LICENSE)

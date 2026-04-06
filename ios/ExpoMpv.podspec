@@ -37,7 +37,7 @@ Pod::Spec.new do |s|
 
   s.libraries = ['bz2', 'iconv', 'expat', 'resolv', 'xml2', 'z', 'c++']
 
-  # Vendored xcframeworks from download-mpvkit.sh
+  # Vendored XCFrameworks downloaded by the Expo config plugin during prebuild
   s.vendored_frameworks = 'Frameworks/*.xcframework'
 
   s.pod_target_xcconfig = {

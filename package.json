@@ -1,7 +1,7 @@
 {
   "name": "expo-mpv",
   "version": "0.1.4",
-  "description": "My new module",
+  "description": "Expo module wrapping libmpv for video playback on iOS and Android",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "scripts": {
@@ -26,7 +26,7 @@
     "url": "https://github.com/lonzzi/expo-mpv/issues"
   },
   "author": "lonzzi <lonzzi@qq.com> (https://github.com/lonzzi)",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "homepage": "https://github.com/lonzzi/expo-mpv#readme",
   "dependencies": {},
   "devDependencies": {

@@ -2,49 +2,133 @@ package expo.modules.mpv
 
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import java.net.URL
 
 class ExpoMpvModule : Module() {
-  // Each module class must implement the definition function. The definition consists of components
-  // that describes the module's functionality and behavior.
-  // See https://docs.expo.dev/modules/module-api for more details about available components.
-  override fun definition() = ModuleDefinition {
-    // Sets the name of the module that JavaScript code will use to refer to the module. Takes a string as an argument.
-    // Can be inferred from module's class name, but it's recommended to set it explicitly for clarity.
-    // The module will be accessible from `requireNativeModule('ExpoMpv')` in JavaScript.
-    Name("ExpoMpv")
+    override fun definition() = ModuleDefinition {
+        Name("ExpoMpv")
 
-    // Defines constant property on the module.
-    Constant("PI") {
-      Math.PI
+        View(ExpoMpvView::class) {
+            // Events (same as iOS)
+            Events(
+                "onPlaybackStateChange",
+                "onProgress",
+                "onLoad",
+                "onError",
+                "onEnd",
+                "onBuffer",
+                "onSeek",
+                "onVolumeChange"
+            )
+
+            // Props (same as iOS)
+            Prop("source") { view: ExpoMpvView, source: String? ->
+                if (source != null) {
+                    view.loadFile(source)
+                }
+            }
+
+            Prop("paused") { view: ExpoMpvView, paused: Boolean ->
+                if (paused) view.pause() else view.play()
+            }
+
+            Prop("speed") { view: ExpoMpvView, speed: Double ->
+                view.setSpeed(speed)
+            }
+
+            Prop("volume") { view: ExpoMpvView, volume: Double ->
+                view.setVolume(volume)
+            }
+
+            Prop("muted") { view: ExpoMpvView, muted: Boolean ->
+                view.setMuted(muted)
+            }
+
+            Prop("loop") { view: ExpoMpvView, loop: Boolean ->
+                view.setLooping(loop)
+            }
+
+            Prop("hwdec") { view: ExpoMpvView, hwdec: String? ->
+                if (hwdec != null) {
+                    view.setHwdec(hwdec)
+                }
+            }
+
+            // Async functions (same as iOS)
+            AsyncFunction("play") { view: ExpoMpvView ->
+                view.play()
+            }
+
+            AsyncFunction("pause") { view: ExpoMpvView ->
+                view.pause()
+            }
+
+            AsyncFunction("togglePlay") { view: ExpoMpvView ->
+                view.togglePlay()
+            }
+
+            AsyncFunction("stop") { view: ExpoMpvView ->
+                view.stop()
+            }
+
+            AsyncFunction("seekTo") { view: ExpoMpvView, position: Double ->
+                view.seekTo(position)
+            }
+
+            AsyncFunction("seekBy") { view: ExpoMpvView, offset: Double ->
+                view.seekBy(offset)
+            }
+
+            AsyncFunction("setSpeed") { view: ExpoMpvView, speed: Double ->
+                view.setSpeed(speed)
+            }
+
+            AsyncFunction("setVolume") { view: ExpoMpvView, volume: Double ->
+                view.setVolume(volume)
+            }
+
+            AsyncFunction("setMuted") { view: ExpoMpvView, muted: Boolean ->
+                view.setMuted(muted)
+            }
+
+            AsyncFunction("setSubtitleTrack") { view: ExpoMpvView, trackId: Int ->
+                view.setSubtitleTrack(trackId)
+            }
+
+            AsyncFunction("setAudioTrack") { view: ExpoMpvView, trackId: Int ->
+                view.setAudioTrack(trackId)
+            }
+
+            AsyncFunction("addSubtitle") { view: ExpoMpvView, path: String, flag: String?, title: String?, lang: String? ->
+                view.addSubtitle(path, flag ?: "auto", title, lang)
+            }
+
+            AsyncFunction("removeSubtitle") { view: ExpoMpvView, trackId: Int ->
+                view.removeSubtitle(trackId)
+            }
+
+            AsyncFunction("reloadSubtitles") { view: ExpoMpvView ->
+                view.reloadSubtitles()
+            }
+
+            AsyncFunction("setSubtitleDelay") { view: ExpoMpvView, seconds: Double ->
+                view.setSubtitleDelay(seconds)
+            }
+
+            AsyncFunction("setPropertyString") { view: ExpoMpvView, name: String, value: String ->
+                view.setPropertyString(name, value)
+            }
+
+            AsyncFunction("getPlaybackInfo") { view: ExpoMpvView ->
+                view.getPlaybackInfo()
+            }
+
+            AsyncFunction("getTrackList") { view: ExpoMpvView ->
+                view.getTrackList()
+            }
+
+            AsyncFunction("getCurrentTrackIds") { view: ExpoMpvView ->
+                view.getCurrentTrackIds()
+            }
+        }
     }
-
-    // Defines event names that the module can send to JavaScript.
-    Events("onChange")
-
-    // Defines a JavaScript synchronous function that runs the native code on the JavaScript thread.
-    Function("hello") {
-      "Hello world! 👋"
-    }
-
-    // Defines a JavaScript function that always returns a Promise and whose native code
-    // is by default dispatched on the different thread than the JavaScript runtime runs on.
-    AsyncFunction("setValueAsync") { value: String ->
-      // Send an event to JavaScript.
-      sendEvent("onChange", mapOf(
-        "value" to value
-      ))
-    }
-
-    // Enables the module to be used as a native view. Definition components that are accepted as part of
-    // the view definition: Prop, Events.
-    View(ExpoMpvView::class) {
-      // Defines a setter for the `url` prop.
-      Prop("url") { view: ExpoMpvView, url: URL ->
-        view.webView.loadUrl(url.toString())
-      }
-      // Defines an event that the view can send to JavaScript.
-      Events("onLoad")
-    }
-  }
 }

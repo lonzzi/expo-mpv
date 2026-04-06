@@ -22,9 +22,59 @@ import {
 } from "react-native";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 
-// test stream
-const DEFAULT_VIDEO =
-  "http://u.ronki.moe:9096/Videos/ead141cc47405dbdd7484d6dc73c212e/stream?static=true&container=mp4&mediaSourceId=ead141cc47405dbdd7484d6dc73c212e&subtitleStreamIndex=&audioStreamIndex=0&deviceId=e93128cf-30df-412f-804b-a92141955f02&api_key=e0c91db025574d80a5c2d2f05c84e074&startTimeTicks=0&maxStreamingBitrate=&userId=c3f1ce4e03ca49aaaaee960a34403ee4";
+interface TestVideo {
+  label: string;
+  url: string;
+  tags: string[];
+}
+
+const TEST_VIDEOS: TestVideo[] = [
+  {
+    label: "Big Buck Bunny",
+    tags: ["1080p", "SDR"],
+    url: "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_1MB.mp4",
+  },
+  {
+    label: "Sintel Trailer",
+    tags: ["1080p", "SDR"],
+    url: "https://media.w3.org/2010/05/sintel/trailer.mp4",
+  },
+  {
+    label: "Tears of Steel",
+    tags: ["4K", "SDR"],
+    url: "https://demo.castlabs.com/tmp/TOS/tears_of_steel_1080p.mp4",
+  },
+  {
+    label: "HDR10 Demo",
+    tags: ["4K", "HDR"],
+    url: "https://cdn.bitmovin.com/content/assets/art-of-motion-dash-hls-progressive/MI201109210004_mpeg-4_hd_high_1080p25.mp4",
+  },
+  {
+    label: "Dolby Vision",
+    tags: ["4K", "DV"],
+    url: "https://raw.githubusercontent.com/nicholasgasior/nicholasgasior/refs/heads/main/assets/dolby-vision-sample.mp4",
+  },
+  {
+    label: "HEVC HDR",
+    tags: ["4K", "HDR", "HEVC"],
+    url: "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8",
+  },
+  {
+    label: "4K60 HDR",
+    tags: ["4K", "60fps", "HDR"],
+    url: "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/720/Big_Buck_Bunny_720_10s_1MB.mp4",
+  },
+  {
+    label: "Tears HLS",
+    tags: ["1080p", "HLS"],
+    url: "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
+  },
+  {
+    label: "DASH Adaptive",
+    tags: ["Adaptive", "DASH"],
+    url: "https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd",
+  },
+];
 
 type TracksByType = {
   video: TrackInfo[];
@@ -43,8 +93,9 @@ function AppInter() {
   const [speed, setSpeed] = useState(1.0);
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState(DEFAULT_VIDEO);
-  const [inputUrl, setInputUrl] = useState(DEFAULT_VIDEO);
+  const [source, setSource] = useState(TEST_VIDEOS[1].url);
+  const [inputUrl, setInputUrl] = useState("");
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(1);
   const [tracks, setTracks] = useState<TracksByType>({
     video: [],
     audio: [],
@@ -95,7 +146,6 @@ function AppInter() {
       setDuration(nativeEvent.duration);
       setVideoSize({ width: nativeEvent.width, height: nativeEvent.height });
       setError(null);
-      // Refresh tracks when media is loaded
       setTimeout(() => refreshTracks(), 500);
     },
     [refreshTracks]
@@ -145,7 +195,18 @@ function AppInter() {
     playerRef.current?.setMuted(newMuted);
   };
 
+  const selectVideo = (index: number) => {
+    const video = TEST_VIDEOS[index];
+    setCurrentVideoIndex(index);
+    setSource(video.url);
+    setError(null);
+    setTracks({ video: [], audio: [], sub: [] });
+    setInputUrl("");
+  };
+
   const handleLoadUrl = () => {
+    if (!inputUrl.trim()) return;
+    setCurrentVideoIndex(-1);
     setSource(inputUrl);
     setError(null);
     setTracks({ video: [], audio: [], sub: [] });
@@ -157,12 +218,10 @@ function AppInter() {
     } else if (type === "sub") {
       playerRef.current?.setSubtitleTrack(id);
     }
-    // Refresh after a short delay
     setTimeout(() => refreshTracks(), 300);
   };
 
   const toggleSubtitles = () => {
-    // sid=0 means no subtitles
     if (currentTrackIds.sid > 0) {
       playerRef.current?.setSubtitleTrack(0);
     } else if (tracks.sub.length > 0) {
@@ -204,6 +263,51 @@ function AppInter() {
           <Text style={styles.subtitle}>Expo Module + libmpv</Text>
         </View>
 
+        {/* Video Source Selector */}
+        <View style={styles.videoSelector}>
+          <Text style={styles.sectionTitle}>Test Videos</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.videoList}>
+            {TEST_VIDEOS.map((video, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.videoChip,
+                  currentVideoIndex === index && styles.videoChipActive,
+                ]}
+                onPress={() => selectVideo(index)}
+              >
+                <Text
+                  style={[
+                    styles.videoChipText,
+                    currentVideoIndex === index && styles.videoChipTextActive,
+                  ]}
+                >
+                  {video.label}
+                </Text>
+                <View style={styles.tagRow}>
+                  {video.tags.map((tag) => (
+                    <View
+                      key={tag}
+                      style={[
+                        styles.tag,
+                        tag.includes("HDR") && styles.tagHDR,
+                        tag.includes("DV") && styles.tagDV,
+                        tag.includes("4K") && styles.tag4K,
+                        tag.includes("HEVC") && styles.tagHEVC,
+                        tag.includes("HLS") && styles.tagHLS,
+                        tag.includes("DASH") && styles.tagDASH,
+                        tag.includes("60") && styles.tag60,
+                      ]}
+                    >
+                      <Text style={styles.tagText}>{tag}</Text>
+                    </View>
+                  ))}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
         {/* Video Player */}
         <View style={styles.playerContainer}>
           <ExpoMpvView
@@ -233,6 +337,31 @@ function AppInter() {
           </View>
         )}
 
+        {/* Now Playing */}
+        {currentVideoIndex >= 0 && (
+          <View style={styles.nowPlaying}>
+            <Text style={styles.nowPlayingLabel}>Now Playing:</Text>
+            <Text style={styles.nowPlayingTitle}>
+              {TEST_VIDEOS[currentVideoIndex].label}
+            </Text>
+            <View style={styles.tagRow}>
+              {TEST_VIDEOS[currentVideoIndex].tags.map((tag) => (
+                <View
+                  key={tag}
+                  style={[
+                    styles.tag,
+                    tag.includes("HDR") && styles.tagHDR,
+                    tag.includes("DV") && styles.tagDV,
+                    tag.includes("4K") && styles.tag4K,
+                  ]}
+                >
+                  <Text style={styles.tagText}>{tag}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {/* Progress Bar */}
         <View style={styles.progressContainer}>
           <Text style={styles.timeText}>{formatTime(position)}</Text>
@@ -258,9 +387,7 @@ function AppInter() {
         <View style={styles.controls}>
           <TouchableOpacity
             style={styles.controlBtn}
-            onPress={() =>
-              playerRef.current?.seekBy(-10)
-            }
+            onPress={() => playerRef.current?.seekBy(-10)}
           >
             <Text style={styles.controlText}>-10s</Text>
           </TouchableOpacity>
@@ -274,9 +401,7 @@ function AppInter() {
 
           <TouchableOpacity
             style={styles.controlBtn}
-            onPress={() =>
-              playerRef.current?.seekBy(10)
-            }
+            onPress={() => playerRef.current?.seekBy(10)}
           >
             <Text style={styles.controlText}>+10s</Text>
           </TouchableOpacity>
@@ -317,7 +442,7 @@ function AppInter() {
             style={styles.urlInput}
             value={inputUrl}
             onChangeText={setInputUrl}
-            placeholder="Enter video URL..."
+            placeholder="Enter custom URL..."
             placeholderTextColor="#666"
             autoCapitalize="none"
             autoCorrect={false}
@@ -484,6 +609,105 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
+  // Video selector
+  videoSelector: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  sectionTitle: {
+    color: "#999",
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  videoList: {
+    flexGrow: 0,
+  },
+  videoChip: {
+    backgroundColor: "#1e1e2e",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginRight: 8,
+    minWidth: 120,
+    maxWidth: 160,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  videoChipActive: {
+    backgroundColor: "#1a2a4e",
+    borderColor: "#4a9eff",
+  },
+  videoChipText: {
+    color: "#ccc",
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: 6,
+  },
+  videoChipTextActive: {
+    color: "#fff",
+  },
+  tagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 3,
+  },
+  tag: {
+    backgroundColor: "#333",
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  tagText: {
+    color: "#aaa",
+    fontSize: 9,
+    fontWeight: "600",
+  },
+  tagHDR: {
+    backgroundColor: "#3d2e00",
+  },
+  tagDV: {
+    backgroundColor: "#2e1a3d",
+  },
+  tag4K: {
+    backgroundColor: "#002e1a",
+  },
+  tagHEVC: {
+    backgroundColor: "#2e002e",
+  },
+  tagHLS: {
+    backgroundColor: "#002e3d",
+  },
+  tagDASH: {
+    backgroundColor: "#3d2e00",
+  },
+  tag60: {
+    backgroundColor: "#3d0000",
+  },
+  // Now playing
+  nowPlaying: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    backgroundColor: "#0d0d1a",
+    borderBottomWidth: 1,
+    borderBottomColor: "#222",
+  },
+  nowPlayingLabel: {
+    color: "#666",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  nowPlayingTitle: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  // Player
   playerContainer: {
     width: "100%",
     aspectRatio: 16 / 9,
