@@ -461,8 +461,12 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void * /*reserved*/) {
         auto fn = (av_jni_set_java_vm_fn)dlsym(avcodec, "av_jni_set_java_vm");
         if (fn) {
             fn(vm, nullptr);
-            LOGI("av_jni_set_java_vm set");
+            LOGI("av_jni_set_java_vm set — MediaCodec hardware decoding available");
+        } else {
+            LOGE("av_jni_set_java_vm symbol not found in libavcodec.so — MediaCodec hwdec may not work");
         }
+    } else {
+        LOGE("Failed to dlopen libavcodec.so — MediaCodec hardware decoding unavailable");
     }
 
     jclass cls = env->FindClass("expo/modules/mpv/MPVLib");

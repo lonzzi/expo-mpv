@@ -1,14 +1,12 @@
 package expo.modules.mpv
 
-import android.app.Activity
-import android.app.Application
 import android.content.Context
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.View
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
@@ -86,33 +84,6 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
                 }
             }
         })
-
-        setupLifecycle()
-    }
-
-    // MARK: - Lifecycle
-
-    private val lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
-        override fun onActivityPaused(activity: Activity) {
-            if (nativePtr != 0L && isInitialized && activity == appContext.currentActivity) {
-                setPropertyString("vid", "no")
-            }
-        }
-        override fun onActivityResumed(activity: Activity) {
-            if (nativePtr != 0L && isInitialized && activity == appContext.currentActivity) {
-                setPropertyString("vid", "auto")
-            }
-        }
-        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
-        override fun onActivityStarted(activity: Activity) {}
-        override fun onActivityStopped(activity: Activity) {}
-        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
-        override fun onActivityDestroyed(activity: Activity) {}
-    }
-
-    private fun setupLifecycle() {
-        val app = context.applicationContext as? Application ?: return
-        app.registerActivityLifecycleCallbacks(lifecycleCallbacks)
     }
 
     override fun onDetachedFromWindow() {
@@ -120,15 +91,29 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
         destroy()
     }
 
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (nativePtr != 0L && isInitialized) {
+            if (visibility == View.GONE || visibility == View.INVISIBLE) {
+                setPropertyString("vid", "no")
+            } else {
+                setPropertyString("vid", "auto")
+            }
+        }
+    }
+
     fun destroy() {
         stopProgressTimer()
-        val app = context.applicationContext as? Application
-        app?.unregisterActivityLifecycleCallbacks(lifecycleCallbacks)
-        if (nativePtr != 0L) {
-            MPVLib.nativeDestroy(nativePtr)
-            nativePtr = 0
-        }
+        val ptr = nativePtr
+        nativePtr = 0
         isInitialized = false
+        if (ptr != 0L) {
+            // Destroy on background thread to avoid blocking the main thread
+            // (pthread_join + mpv_terminate_destroy can take seconds)
+            Thread {
+                MPVLib.nativeDestroy(ptr)
+            }.start()
+        }
     }
 
     // MARK: - MPV Setup (two-phase: create+options, then initialize after surface)
@@ -153,6 +138,12 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
         if (isEmulator()) {
             android.util.Log.w("ExpoMpv", "Emulator detected, hardware decoding disabled (using software decoding)")
         }
+
+        // Network stream caching
+        MPVLib.nativeSetOptionString(nativePtr, "cache", "yes")
+        MPVLib.nativeSetOptionString(nativePtr, "demuxer-max-bytes", "150M")
+        MPVLib.nativeSetOptionString(nativePtr, "demuxer-max-back-bytes", "50M")
+        MPVLib.nativeSetOptionString(nativePtr, "cache-pause", "yes")
 
         // General
         MPVLib.nativeSetOptionString(nativePtr, "force-window", "yes")
