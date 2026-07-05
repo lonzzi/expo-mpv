@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'expo.modules.mpv'
-version = '0.1.0'
+version = '0.1.9'
 
 // ---- mpv-android release tag ----
 def mpvAndroidTag = "2026-03-22"
@@ -15,7 +15,7 @@ android {
   namespace "expo.modules.mpv"
   defaultConfig {
     versionCode 1
-    versionName "0.1.0"
+    versionName "0.1.9"
     minSdk 21
     ndk {
       abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'

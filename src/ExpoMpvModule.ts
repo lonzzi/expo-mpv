@@ -1,6 +1,6 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
-import { ExpoMpvModuleEvents } from './ExpoMpv.types';
+import type { ExpoMpvModuleEvents } from './ExpoMpv.types';
 
 declare class ExpoMpvModule extends NativeModule<ExpoMpvModuleEvents> {}
 

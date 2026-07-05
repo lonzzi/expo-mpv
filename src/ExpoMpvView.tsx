@@ -2,7 +2,7 @@ import { requireNativeView } from 'expo';
 import * as React from 'react';
 import { useImperativeHandle, useRef } from 'react';
 
-import { ExpoMpvViewProps, ExpoMpvViewRef } from './ExpoMpv.types';
+import type { ExpoMpvViewProps, ExpoMpvViewRef } from './ExpoMpv.types';
 
 const NativeView: React.ComponentType<ExpoMpvViewProps & { ref?: React.Ref<any> }> =
   requireNativeView('ExpoMpv', 'ExpoMpvView');

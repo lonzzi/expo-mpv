@@ -11,6 +11,11 @@ __tests__
 /android/src/androidTest/
 /android/src/test/
 /android/build/
+/android/.gradle/
+/android/src/main/jniLibs/
 /ios/Frameworks/
 /example/
 /plugin/src/
+/plugin/tsconfig.tsbuildinfo
+/release.sh
+/**/*.tsbuildinfo
