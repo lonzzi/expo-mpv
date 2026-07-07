@@ -19,7 +19,7 @@ config.resolver.nodeModulesPaths = [
 ];
 
 config.resolver.extraNodeModules = {
-  'expo-mpv': '..',
+  'expo-mpv': path.resolve(__dirname, '..'),
 };
 
 config.watchFolders = [path.resolve(__dirname, '..')];
