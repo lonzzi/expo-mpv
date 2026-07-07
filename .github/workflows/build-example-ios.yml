@@ -1,0 +1,89 @@
+name: Build Example (iOS)
+
+# Compiles the example app on a macOS runner to verify the native iOS module
+# (and its MPVKit integration) builds. Adapted from nekofin's build-apps.yml
+# iOS job — unsigned, simulator build, no EAS.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'src/**'
+      - 'plugin/**'
+      - 'example/**'
+      - '.github/workflows/build-example-ios.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'src/**'
+      - 'plugin/**'
+      - 'example/**'
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Build iOS example
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 'latest'
+
+      - name: Install Xcode iOS platform
+        run: |
+          xcrun simctl list > /dev/null # https://github.com/actions/runner-images/issues/12862
+          xcodebuild -downloadPlatform iOS
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Cache MPVKit frameworks
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: ios/Frameworks
+          key: mpvkit-frameworks-${{ hashFiles('plugin/src/withExpoMpv.ts') }}
+
+      - name: Install example dependencies
+        working-directory: example
+        run: bun install
+
+      # The example registers the module's config plugin (../app.plugin.js), so
+      # prebuild runs it and downloads the MPVKit xcframeworks into ios/Frameworks
+      # automatically — same as a real consumer.
+      - name: Expo prebuild (iOS)
+        working-directory: example
+        run: bunx expo prebuild -p ios --clean
+
+      - name: Install CocoaPods
+        working-directory: example/ios
+        run: pod install
+
+      - name: Build (iOS Simulator, unsigned)
+        working-directory: example/ios
+        run: |
+          xcodebuild \
+            -workspace expompvexample.xcworkspace \
+            -scheme expompvexample \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/DD \
+            CODE_SIGNING_ALLOWED=NO \
+            build

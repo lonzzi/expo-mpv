@@ -19,6 +19,12 @@ class ExpoMpvView: ExpoView {
   private var pendingHwdec: String = "videotoolbox"
   private var progressTimer: Timer?
 
+  /// Whether a source has been requested (loadfile issued and not stopped).
+  /// Distinguishes "idle" (no media) from "loading" (media coming up).
+  private var hasSource = false
+  /// Last emitted high-level playback state, to avoid duplicate events.
+  private var currentState = "idle"
+
   // MARK: - Event Dispatchers
 
   let onPlaybackStateChange = EventDispatcher()
@@ -29,6 +35,7 @@ class ExpoMpvView: ExpoView {
   let onBuffer = EventDispatcher()
   let onSeek = EventDispatcher()
   let onVolumeChange = EventDispatcher()
+  let onHdrStateChange = EventDispatcher()
 
   // MARK: - Init
 
@@ -110,6 +117,12 @@ class ExpoMpvView: ExpoView {
     setOptionString("gpu-api", "vulkan")
     setOptionString("gpu-context", "moltenvk")
     setOptionString("hwdec", pendingHwdec)
+    // HDR / Dolby Vision passthrough. Must be set before mpv_initialize and
+    // requires vo=gpu-next (device only). With this enabled, mpv + libplacebo +
+    // libdovi automatically pass through / tone-map HDR & DV per content, and
+    // the moltenvk backend drives the CAMetalLayer's EDR mode. `auto` is not
+    // supported on moltenvk, so we use `yes`.
+    setOptionString("target-colorspace-hint", "yes")
     #endif
 
     // General options
@@ -151,6 +164,8 @@ class ExpoMpvView: ExpoView {
     mpv_observe_property(mpv, 8, "demuxer-cache-duration", MPV_FORMAT_DOUBLE)
     mpv_observe_property(mpv, 9, "video-params/w", MPV_FORMAT_INT64)
     mpv_observe_property(mpv, 10, "video-params/h", MPV_FORMAT_INT64)
+    mpv_observe_property(mpv, 11, "core-idle", MPV_FORMAT_FLAG)
+    mpv_observe_property(mpv, 12, "video-params/sig-peak", MPV_FORMAT_DOUBLE)
 
     // Set wakeup callback for the event loop
     let rawSelf = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
@@ -196,10 +211,12 @@ class ExpoMpvView: ExpoView {
 
   // MARK: - Progress Timer
 
+  /// Start the progress timer if it isn't already running. Idempotent so it can
+  /// be driven repeatedly from the state machine without tearing down/recreating.
   private func startProgressTimer() {
-    stopProgressTimer()
     DispatchQueue.main.async { [weak self] in
-      self?.progressTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+      guard let self = self, self.progressTimer == nil else { return }
+      self.progressTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
         self?.emitProgressEvent()
       }
     }
@@ -215,6 +232,12 @@ class ExpoMpvView: ExpoView {
     let position = getDouble("time-pos")
     let duration = getDouble("duration")
     let cachedDuration = getDouble("demuxer-cache-duration")
+    // Absolute timeline position up to which media is buffered (for a seek bar).
+    let cacheTime = getDouble("demuxer-cache-time")
+    // Network read rate in bytes/sec, from the demuxer-cache-state NODE map.
+    let bufferRate = getCacheRawInputRate()
+    // Cache fill percentage while stalled (0-100); 100 when not buffering.
+    let bufferingPercent = getFlag("paused-for-cache") ? getDouble("cache-buffering-state") : 100
 
     guard position.isFinite && duration.isFinite else { return }
 
@@ -222,6 +245,44 @@ class ExpoMpvView: ExpoView {
       "position": position,
       "duration": duration,
       "bufferedDuration": cachedDuration.isFinite ? cachedDuration : 0,
+      "bufferedPosition": cacheTime.isFinite ? cacheTime : 0,
+      "bufferRate": bufferRate,
+      "bufferingPercent": bufferingPercent.isFinite ? bufferingPercent : 0,
+    ])
+  }
+
+  // MARK: - Playback State Machine
+
+  /// Derive the high-level playback state from mpv's orthogonal status flags.
+  /// Order matters: cache stalls and EOF take precedence over the pause flag.
+  private func computeState() -> String {
+    guard mpv != nil, hasSource else { return "idle" }
+    if getFlag("eof-reached") { return "ended" }
+    if getFlag("paused-for-cache") { return "buffering" }
+    if getFlag("pause") { return "paused" }
+    // Not paused and not stalled, but the core isn't rendering yet -> still
+    // loading the first frame (or re-buffering after a seek).
+    if getFlag("core-idle") { return "loading" }
+    return "playing"
+  }
+
+  /// Recompute state, drive the progress timer accordingly, and emit an event
+  /// only when the state actually changes. Must run on the main thread.
+  private func emitStateChange() {
+    let state = computeState()
+
+    switch state {
+    case "playing", "loading", "buffering":
+      startProgressTimer()
+    default:
+      stopProgressTimer()
+    }
+
+    guard state != currentState else { return }
+    currentState = state
+    onPlaybackStateChange([
+      "state": state,
+      "isPlaying": !getFlag("pause"),
     ])
   }
 
@@ -266,7 +327,9 @@ class ExpoMpvView: ExpoView {
               "width": width,
               "height": height,
             ])
-            self.startProgressTimer()
+            // File is demuxed and tracks are known, but the first frame may not
+            // be rendered yet — let the state machine decide loading vs playing.
+            self.emitStateChange()
           }
 
         case MPV_EVENT_START_FILE:
@@ -277,7 +340,6 @@ class ExpoMpvView: ExpoView {
             let endFile = data.assumingMemoryBound(to: mpv_event_end_file.self).pointee
             self.log("EVENT: end-file reason=\(endFile.reason) error=\(endFile.error)")
             DispatchQueue.main.async {
-              self.stopProgressTimer()
               let reason: String
               switch endFile.reason {
               case MPV_END_FILE_REASON_EOF:
@@ -288,12 +350,24 @@ class ExpoMpvView: ExpoView {
                 let msg = "Playback error: \(errStr) (code \(endFile.error))"
                 self.log("ERROR: \(msg)")
                 self.onError(["error": msg])
+                self.hasSource = false
               case MPV_END_FILE_REASON_STOP:
                 reason = "stopped"
+                self.hasSource = false
               default:
                 reason = "unknown"
+                self.hasSource = false
               }
               self.onEnd(["reason": reason])
+              if reason == "ended" {
+                // EOF with keep-open=yes: emit "ended" directly to avoid relying
+                // on eof-reached property timing.
+                self.currentState = "ended"
+                self.onPlaybackStateChange(["state": "ended", "isPlaying": false])
+                self.stopProgressTimer()
+              } else {
+                self.emitStateChange() // -> idle
+              }
             }
           }
 
@@ -325,28 +399,22 @@ class ExpoMpvView: ExpoView {
     let name = String(cString: cName)
 
     switch name {
-    case "pause":
-      if prop.format == MPV_FORMAT_FLAG, let flagPtr = prop.data {
-        let paused = flagPtr.assumingMemoryBound(to: Int32.self).pointee != 0
-        DispatchQueue.main.async {
-          self.onPlaybackStateChange([
-            "state": paused ? "paused" : "playing",
-            "isPlaying": !paused,
-          ])
-          if paused {
-            self.stopProgressTimer()
-          } else {
-            self.startProgressTimer()
-          }
-        }
+    // These flags all feed the unified state machine; let computeState() decide.
+    case "pause", "core-idle", "eof-reached":
+      DispatchQueue.main.async {
+        self.emitStateChange()
       }
 
     case "paused-for-cache":
-      if prop.format == MPV_FORMAT_FLAG, let flagPtr = prop.data {
-        let buffering = flagPtr.assumingMemoryBound(to: Int32.self).pointee != 0
-        DispatchQueue.main.async {
-          self.onBuffer(["isBuffering": buffering])
-        }
+      let buffering: Bool = {
+        guard prop.format == MPV_FORMAT_FLAG, let flagPtr = prop.data else { return false }
+        return flagPtr.assumingMemoryBound(to: Int32.self).pointee != 0
+      }()
+      DispatchQueue.main.async {
+        // Keep the dedicated buffering event for backwards compatibility, and
+        // recompute the high-level state (buffering vs playing).
+        self.onBuffer(["isBuffering": buffering])
+        self.emitStateChange()
       }
 
     case "volume":
@@ -365,9 +433,35 @@ class ExpoMpvView: ExpoView {
         }
       }
 
+    case "video-params/sig-peak":
+      let sigPeak: Double = {
+        guard prop.format == MPV_FORMAT_DOUBLE, let dataPtr = prop.data else { return 0 }
+        return dataPtr.assumingMemoryBound(to: Double.self).pointee
+      }()
+      DispatchQueue.main.async {
+        self.emitHdrStateChange(sigPeak: sigPeak)
+      }
+
     default:
       break
     }
+  }
+
+  /// Report HDR state to JS. `sigPeak` > 1 means the media is HDR; combined with
+  /// the screen's EDR headroom it tells whether HDR is actually being displayed.
+  /// Must run on the main thread (reads UIScreen).
+  private func emitHdrStateChange(sigPeak: Double) {
+    let peak = sigPeak.isFinite ? sigPeak : 0
+    let isHdr = peak > 1.0
+    let headroom = window?.screen.potentialEDRHeadroom ?? 1.0
+    let hdrActive = isHdr && headroom > 1.0
+    let gamma = getString("video-params/gamma") ?? ""
+    onHdrStateChange([
+      "isHdr": isHdr,
+      "hdrActive": hdrActive,
+      "sigPeak": peak,
+      "hdrFormat": isHdr ? gamma : "",
+    ])
   }
 
   // MARK: - Public API
@@ -379,7 +473,17 @@ class ExpoMpvView: ExpoView {
       return
     }
     log("loadFile: \(url)")
+    hasSource = true
     commandAsync("loadfile", args: [url, "replace"])
+    // Enter "loading" immediately. We force it here (rather than via
+    // computeState) because right after loadfile mpv may still report the
+    // previous file's flags (e.g. eof-reached), which would misfire "ended".
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      self.currentState = "loading"
+      self.onPlaybackStateChange(["state": "loading", "isPlaying": !self.getFlag("pause")])
+      self.startProgressTimer()
+    }
   }
 
   func play() {
@@ -397,7 +501,10 @@ class ExpoMpvView: ExpoView {
 
   func stop() {
     commandAsync("stop")
-    stopProgressTimer()
+    hasSource = false
+    DispatchQueue.main.async { [weak self] in
+      self?.emitStateChange() // -> idle
+    }
   }
 
   func seekTo(_ position: Double) {
@@ -440,18 +547,24 @@ class ExpoMpvView: ExpoView {
     setInt("aid", Int64(trackId))
   }
 
-  /// Load an external subtitle file (local path or URL).
-  func addSubtitle(_ path: String, flag: String = "auto", title: String? = nil, lang: String? = nil) {
-    guard mpv != nil else { return }
-    // sub-add <url> [<flags> [<title> [<lang>]]]
+  /// Build args for sub-add / audio-add: <url> [<flags> [<title> [<lang>]]].
+  private func trackAddArgs(_ path: String, flag: String, title: String?, lang: String?) -> [String] {
     var args = [path, flag]
     if let title = title { args.append(title) }
     if let lang = lang {
       if args.count == 2 { args.append("") } // placeholder for title
       args.append(lang)
     }
+    return args
+  }
+
+  /// Load an external subtitle file (local path or URL).
+  /// `flag` defaults to "select" (mpv's own default) so the subtitle is shown
+  /// immediately. Pass "auto" to add without selecting (then use setSubtitleTrack).
+  func addSubtitle(_ path: String, flag: String = "select", title: String? = nil, lang: String? = nil) {
+    guard mpv != nil else { return }
     log("addSubtitle: \(path) flags=\(flag)")
-    commandAsync("sub-add", args: args)
+    commandAsync("sub-add", args: trackAddArgs(path, flag: flag, title: title, lang: lang))
   }
 
   /// Remove a subtitle track by id.
@@ -462,6 +575,20 @@ class ExpoMpvView: ExpoView {
   /// Reload current subtitles (useful after font changes).
   func reloadSubtitles() {
     commandAsync("sub-reload")
+  }
+
+  /// Load an external audio file (local path or URL). `flag` defaults to
+  /// "select" so it becomes the active audio track. Pass "auto" to add without
+  /// selecting (then use setAudioTrack).
+  func addAudio(_ path: String, flag: String = "select", title: String? = nil, lang: String? = nil) {
+    guard mpv != nil else { return }
+    log("addAudio: \(path) flags=\(flag)")
+    commandAsync("audio-add", args: trackAddArgs(path, flag: flag, title: title, lang: lang))
+  }
+
+  /// Remove an audio track by id.
+  func removeAudio(_ trackId: Int) {
+    commandAsync("audio-remove", args: [String(trackId)])
   }
 
   func setSubtitleDelay(_ seconds: Double) {
@@ -555,6 +682,9 @@ class ExpoMpvView: ExpoView {
     let audioBitrate = getDouble("audio-bitrate")
     let pixelFormat = getString("video-params/pixelformat") ?? ""
     let colorspace = getString("video-params/colormatrix") ?? ""
+    // Transfer function: "pq" = HDR10/Dolby Vision, "hlg" = HLG, else SDR.
+    let gamma = getString("video-params/gamma") ?? ""
+    let isHdr = gamma == "pq" || gamma == "hlg" || getDouble("video-params/sig-peak") > 1.0
 
     return [
       "hwdec": hwdec,
@@ -568,6 +698,8 @@ class ExpoMpvView: ExpoView {
       "audioBitrate": audioBitrate.isFinite ? audioBitrate : 0,
       "pixelFormat": pixelFormat,
       "colorspace": colorspace,
+      "isHdr": isHdr,
+      "hdrFormat": gamma,
     ]
   }
 
@@ -732,6 +864,56 @@ class ExpoMpvView: ExpoView {
     var data: Int32 = 0
     mpv_get_property(mpv, name, MPV_FORMAT_FLAG, &data)
     return data != 0
+  }
+
+  /// Read the current network read rate (bytes/sec) from the
+  /// `demuxer-cache-state` NODE map's `raw-input-rate` field.
+  /// Returns 0 when unknown (e.g. local playback or before caching starts).
+  private func getCacheRawInputRate() -> Double {
+    guard mpv != nil else { return 0 }
+    var node = mpv_node()
+    guard mpv_get_property(mpv, "demuxer-cache-state", MPV_FORMAT_NODE, &node) >= 0 else {
+      return 0
+    }
+    defer { mpv_free_node_contents(&node) }
+    guard let dict = nodeToAny(node) as? [String: Any] else { return 0 }
+    if let rate = dict["raw-input-rate"] as? Int64 { return Double(rate) }
+    if let rate = dict["raw-input-rate"] as? Double { return rate }
+    return 0
+  }
+
+  /// Recursively convert an mpv_node into a native Swift value
+  /// (String / Bool / Int64 / Double / [Any] / [String: Any]).
+  private func nodeToAny(_ node: mpv_node) -> Any? {
+    switch node.format {
+    case MPV_FORMAT_STRING:
+      return node.u.string.map { String(cString: $0) }
+    case MPV_FORMAT_FLAG:
+      return node.u.flag != 0
+    case MPV_FORMAT_INT64:
+      return node.u.int64
+    case MPV_FORMAT_DOUBLE:
+      return node.u.double_
+    case MPV_FORMAT_NODE_ARRAY:
+      guard let list = node.u.list?.pointee, let values = list.values else { return [Any]() }
+      var arr: [Any] = []
+      for i in 0..<Int(list.num) {
+        if let v = nodeToAny(values[i]) { arr.append(v) }
+      }
+      return arr
+    case MPV_FORMAT_NODE_MAP:
+      guard let list = node.u.list?.pointee, let values = list.values, let keys = list.keys else {
+        return [String: Any]()
+      }
+      var map: [String: Any] = [:]
+      for i in 0..<Int(list.num) {
+        guard let keyPtr = keys[i] else { continue }
+        if let v = nodeToAny(values[i]) { map[String(cString: keyPtr)] = v }
+      }
+      return map
+    default:
+      return nil
+    }
   }
 
   private func setDouble(_ name: String, _ value: Double) {

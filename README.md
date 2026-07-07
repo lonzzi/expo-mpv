@@ -13,13 +13,14 @@ On iOS it uses [MPVKit](https://github.com/mpvkit/MPVKit). On Android it integra
 - Runtime hardware decode selection (`videotoolbox` / `mediacodec` / software)
 - Media info inspection: codec, resolution, fps, bitrate, hwdec status, pixel format, colorspace
 - Play/pause, seek, speed, volume, mute, loop
-- Subtitle track selection (embedded + external)
-- Audio track selection
-- External subtitle loading (`sub-add`)
+- Unified playback state machine (`idle / loading / playing / paused / buffering / ended`)
+- Buffering stats: buffered position (for the seek bar), download rate, cache fill %
+- HDR / Dolby Vision auto-detection and passthrough on iOS (`onHdrStateChange`)
+- Subtitle track selection (embedded + external), audio track selection
+- External subtitle / audio loading (`addSubtitle` / `addAudio`)
 - Runtime `hwdec` selection (iOS: `videotoolbox`, Android: `mediacodec`)
 - Track inspection via `getTrackList()` and `getCurrentTrackIds()`
-- Media info via `getMediaInfo()` (codec, resolution, fps, bitrate, hwdec status)
-- Progress, buffering, error, and playback state events
+- Media info via `getMediaInfo()` (codec, resolution, fps, bitrate, hwdec status, HDR)
 - CJK subtitle support with bundled Noto Sans CJK SC font
 
 ## Installation
@@ -46,7 +47,7 @@ Add both plugins to your `app.json` / `app.config.ts`:
       "expo-build-properties",
       {
         "ios": {
-          "deploymentTarget": "16.0"
+          "deploymentTarget": "16.4"
         }
       }
     ]
@@ -69,7 +70,7 @@ There is no separate Android setup script to run.
 
 ### iOS notes
 
-- Minimum deployment target: iOS 16.0
+- Minimum deployment target: iOS 16.4 (required by Expo SDK 57 / React Native 0.86)
 - The plugin downloads MPVKit dependencies into `node_modules/expo-mpv/ios/Frameworks`
 - The first prebuild / native build can take a while because the media stack is large
 
@@ -155,14 +156,15 @@ const media = await playerRef.current?.getMediaInfo();
 
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `onPlaybackStateChange` | `{ state, isPlaying }` | Play/pause state changed |
-| `onProgress` | `{ position, duration, bufferedDuration }` | Periodic progress update |
+| `onPlaybackStateChange` | `{ state, isPlaying }` | State machine: `state` is `idle \| loading \| playing \| paused \| buffering \| ended` |
+| `onProgress` | `{ position, duration, bufferedDuration, bufferedPosition, bufferRate, bufferingPercent }` | Periodic progress + buffering stats (buffered position for the seek bar, read rate in bytes/sec, cache fill %) |
 | `onLoad` | `{ duration, width, height }` | Media loaded and ready |
 | `onError` | `{ error }` | Error occurred |
 | `onEnd` | `{ reason }` | Playback ended |
 | `onBuffer` | `{ isBuffering }` | Buffering state changed |
 | `onSeek` | `{}` | Seek completed |
 | `onVolumeChange` | `{ volume, muted }` | Volume/mute changed |
+| `onHdrStateChange` | `{ isHdr, hdrActive, sigPeak, hdrFormat }` | HDR/Dolby Vision content detected / display support changed |
 
 ### Imperative API
 
@@ -179,9 +181,11 @@ const media = await playerRef.current?.getMediaInfo();
 - `setMuted(muted)`
 - `setSubtitleTrack(trackId)`
 - `setAudioTrack(trackId)`
-- `addSubtitle(path, flag?, title?, lang?)`
+- `addSubtitle(path, flag?, title?, lang?)` — external subtitle; `flag` defaults to `select` (shown immediately)
 - `removeSubtitle(trackId)`
 - `reloadSubtitles()`
+- `addAudio(path, flag?, title?, lang?)` — external audio track; `flag` defaults to `select`
+- `removeAudio(trackId)`
 - `setSubtitleDelay(seconds)`
 - `setPropertyString(name, value)`
 - `getPlaybackInfo()`

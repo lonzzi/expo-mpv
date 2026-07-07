@@ -1,6 +1,6 @@
 {
   "name": "expo-mpv",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Expo module wrapping libmpv for video playback on iOS and Android",
   "main": "build/index.js",
   "types": "build/index.d.ts",
@@ -39,7 +39,14 @@
   },
   "peerDependencies": {
     "expo": "*",
-    "react": "*",
+    "react": "19.2.3",
     "react-native": "*"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "enabled": false
+      }
+    }
   }
 }

@@ -105,7 +105,12 @@ const withExpoMpv: ConfigPlugin = (config) => {
   config = withDangerousMod(config, [
     'ios',
     async (config) => {
-      const packageDir = path.dirname(require.resolve('expo-mpv/package.json'));
+      // Locate the module root relative to this compiled plugin file
+      // (<moduleRoot>/plugin/build/withExpoMpv.js) rather than via
+      // require.resolve('expo-mpv'), so it also works for the in-repo example
+      // (where the module isn't installed as a node_modules package) and in
+      // hoisted monorepos.
+      const packageDir = path.join(__dirname, '..', '..');
       const frameworksDir = path.join(packageDir, 'ios', 'Frameworks');
       await downloadMPVKit(frameworksDir);
       return config;

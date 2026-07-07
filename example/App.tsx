@@ -4,9 +4,11 @@ import type {
   ProgressEvent,
   LoadEvent,
   PlaybackStateChangeEvent,
+  PlaybackState,
   ErrorEvent,
   EndEvent,
   BufferEvent,
+  HdrStateChangeEvent,
   TrackInfo,
   MediaInfo,
 } from "expo-mpv";
@@ -33,7 +35,7 @@ interface TestVideo {
 const TEST_VIDEOS: TestVideo[] = [
   {
     label: "Big Buck Bunny",
-    tags: ["1080p", "SDR"],
+    tags: ["1080p", "SDR", "H.264"],
     url: "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_1MB.mp4",
   },
   {
@@ -42,24 +44,34 @@ const TEST_VIDEOS: TestVideo[] = [
     url: "https://media.w3.org/2010/05/sintel/trailer.mp4",
   },
   {
-    label: "HDR10 Demo",
-    tags: ["4K", "HDR", "HLS"],
+    label: "HDR10 Tone-Map",
+    tags: ["HDR", "HEVC"],
+    url: "https://github.com/mpvkit/video-test/raw/master/resources/HDR10_ToneMapping_Test_240_1000_nits.mp4",
+  },
+  {
+    label: "Dolby Vision P5",
+    tags: ["DV", "HDR", "HEVC"],
+    url: "https://github.com/mpvkit/video-test/raw/master/resources/DolbyVision_P5.mp4",
+  },
+  {
+    label: "Dolby Vision P8",
+    tags: ["DV", "HDR", "HEVC"],
+    url: "https://github.com/mpvkit/video-test/raw/master/resources/DolbyVision_P8.mp4",
+  },
+  {
+    label: "DV + Atmos (Apple)",
+    tags: ["4K", "DV", "HLS"],
     url: "https://devstreaming-cdn.apple.com/videos/streaming/examples/adv_dv_atmos/main.m3u8",
   },
   {
-    label: "Dolby Vision",
-    tags: ["4K", "DV", "HLS"],
-    url: "https://devstreaming-cdn.apple.com/videos/streaming/examples/adv_dv_atmos/main.m3u8/../Job2dae5735-d6ca-48ca-91be-0ec0bead535c-107702578-hls_bundle_hdrhls797_dolbyvision/prog_index.m3u8",
-  },
-  {
-    label: "HEVC HDR",
-    tags: ["4K", "HDR", "HEVC"],
+    label: "Apple HEVC HLS",
+    tags: ["HLS", "HEVC"],
     url: "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8",
   },
   {
-    label: "4K60 HDR",
-    tags: ["4K", "60fps", "HDR"],
-    url: "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/720/Big_Buck_Bunny_720_10s_1MB.mp4",
+    label: "Jellyfish HEVC",
+    tags: ["1080p", "HEVC"],
+    url: "https://test-videos.co.uk/vids/jellyfish/mp4/h265/1080/Jellyfish_1080_10s_5MB.mp4",
   },
   {
     label: "Tears HLS",
@@ -92,6 +104,10 @@ function AppInter() {
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState(TEST_VIDEOS[1].url);
   const [inputUrl, setInputUrl] = useState("");
+  // External subtitle / audio demo (prefilled with a sample that matches Sintel).
+  const [extUrl, setExtUrl] = useState(
+    "https://durian.blender.org/wp-content/content/subtitles/sintel_en.srt"
+  );
   const [currentVideoIndex, setCurrentVideoIndex] = useState(1);
   const [isSourceLoading, setIsSourceLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState("Loading stream...");
@@ -109,6 +125,13 @@ function AppInter() {
     Platform.OS === "ios" ? "videotoolbox" : "mediacodec"
   );
   const [mediaInfo, setMediaInfo] = useState<MediaInfo | null>(null);
+
+  // New: unified playback state + buffering stats + HDR
+  const [playbackState, setPlaybackState] = useState<PlaybackState>("idle");
+  const [bufferedPosition, setBufferedPosition] = useState(0);
+  const [bufferRate, setBufferRate] = useState(0);
+  const [bufferingPercent, setBufferingPercent] = useState(100);
+  const [hdr, setHdr] = useState<HdrStateChangeEvent | null>(null);
 
   const refreshMediaInfo = useCallback(async () => {
     try {
@@ -142,6 +165,9 @@ function AppInter() {
   const onPlaybackStateChange = useCallback(
     ({ nativeEvent }: { nativeEvent: PlaybackStateChangeEvent }) => {
       setIsPlaying(nativeEvent.isPlaying);
+      setPlaybackState(nativeEvent.state);
+      // Drive loading UI off the state machine (not just onLoad).
+      if (nativeEvent.state !== "loading") setIsSourceLoading(false);
     },
     []
   );
@@ -150,6 +176,9 @@ function AppInter() {
     ({ nativeEvent }: { nativeEvent: ProgressEvent }) => {
       setPosition(nativeEvent.position);
       setDuration(nativeEvent.duration);
+      setBufferedPosition(nativeEvent.bufferedPosition);
+      setBufferRate(nativeEvent.bufferRate);
+      setBufferingPercent(nativeEvent.bufferingPercent);
     },
     []
   );
@@ -185,12 +214,24 @@ function AppInter() {
     []
   );
 
+  const onHdrStateChange = useCallback(
+    ({ nativeEvent }: { nativeEvent: HdrStateChangeEvent }) => {
+      setHdr(nativeEvent);
+    },
+    []
+  );
+
   const beginSourceLoad = useCallback((message: string) => {
     setIsSourceLoading(true);
     setLoadingMessage(message);
     setIsBuffering(false);
+    setPlaybackState("loading");
     setPosition(0);
     setDuration(0);
+    setBufferedPosition(0);
+    setBufferRate(0);
+    setBufferingPercent(100);
+    setHdr(null);
     setVideoSize({ width: 0, height: 0 });
     setCurrentTrackIds({ vid: 0, aid: 0, sid: 0 });
     setTracks({ video: [], audio: [], sub: [] });
@@ -208,6 +249,24 @@ function AppInter() {
   };
 
   const progressPercent = duration > 0 ? (position / duration) * 100 : 0;
+  const bufferedPercent =
+    duration > 0 ? Math.min(100, (bufferedPosition / duration) * 100) : 0;
+
+  const stateColor: Record<PlaybackState, string> = {
+    idle: "#555",
+    loading: "#eab308",
+    playing: "#22c55e",
+    paused: "#3b82f6",
+    buffering: "#eab308",
+    ended: "#6b7280",
+  };
+
+  const formatRate = (bytesPerSec: number): string => {
+    if (!bytesPerSec || bytesPerSec <= 0) return "—";
+    if (bytesPerSec >= 1_000_000) return `${(bytesPerSec / 1_000_000).toFixed(1)} MB/s`;
+    if (bytesPerSec >= 1_000) return `${(bytesPerSec / 1_000).toFixed(0)} KB/s`;
+    return `${bytesPerSec.toFixed(0)} B/s`;
+  };
 
   const cycleSpeed = () => {
     const speeds = [0.5, 1.0, 1.5, 2.0];
@@ -259,6 +318,21 @@ function AppInter() {
     setCurrentVideoIndex(-1);
     setSource(url);
     setError(null);
+  };
+
+  const handleAddSubtitle = () => {
+    const url = extUrl.trim();
+    if (!url) return;
+    // Default flag is "select", so the subtitle shows immediately.
+    playerRef.current?.addSubtitle(url, "select", "External Sub");
+    setTimeout(() => refreshTracks(), 500);
+  };
+
+  const handleAddAudio = () => {
+    const url = extUrl.trim();
+    if (!url) return;
+    playerRef.current?.addAudio(url, "select", "External Audio");
+    setTimeout(() => refreshTracks(), 500);
   };
 
   const selectTrack = (type: "audio" | "sub" | "video", id: number) => {
@@ -370,20 +444,26 @@ function AppInter() {
             onError={onError}
             onEnd={onEnd}
             onBuffer={onBuffer}
+            onHdrStateChange={onHdrStateChange}
             onSeek={() => {}}
             onVolumeChange={() => {}}
           />
-          {(isSourceLoading || isBuffering) && (
+          {(playbackState === "loading" ||
+            playbackState === "buffering" ||
+            isSourceLoading ||
+            isBuffering) && (
             <View style={styles.loadingOverlay}>
               <View style={styles.loadingCard}>
                 <ActivityIndicator size="large" color="#fff" />
                 <Text style={styles.loadingTitle}>
-                  {isSourceLoading ? loadingMessage : "Buffering stream..."}
+                  {playbackState === "buffering"
+                    ? `Buffering ${Math.round(bufferingPercent)}%`
+                    : loadingMessage}
                 </Text>
                 <Text style={styles.loadingSubtitle}>
-                  {isSourceLoading
-                    ? "Waiting for metadata and first frame"
-                    : "Fetching more media data"}
+                  {playbackState === "buffering"
+                    ? `Fetching more data · ${formatRate(bufferRate)}`
+                    : "Waiting for metadata and first frame"}
                 </Text>
               </View>
             </View>
@@ -422,18 +502,36 @@ function AppInter() {
           </View>
         )}
 
-        {/* Progress Bar */}
+        {/* Progress Bar (with buffered range) */}
         <View style={styles.progressContainer}>
           <Text style={styles.timeText}>{formatTime(position)}</Text>
           <View style={styles.progressBarBg}>
             <View
-              style={[
-                styles.progressBarFill,
-                { width: `${progressPercent}%` },
-              ]}
+              style={[styles.progressBarBuffered, { width: `${bufferedPercent}%` }]}
+            />
+            <View
+              style={[styles.progressBarFill, { width: `${progressPercent}%` }]}
             />
           </View>
           <Text style={styles.timeText}>{formatTime(duration)}</Text>
+        </View>
+
+        {/* Playback state + buffer stats */}
+        <View style={styles.statsRow}>
+          <View style={[styles.stateBadge, { backgroundColor: stateColor[playbackState] }]}>
+            <Text style={styles.stateBadgeText}>{playbackState.toUpperCase()}</Text>
+          </View>
+          <Text style={styles.statsText}>
+            Buffered {Math.round(bufferedPercent)}% · ⬇ {formatRate(bufferRate)}
+          </Text>
+          {hdr?.isHdr && (
+            <View style={[styles.stateBadge, styles.hdrBadge]}>
+              <Text style={styles.stateBadgeText}>
+                {hdr.hdrActive ? "HDR ON" : "HDR"}
+                {hdr.hdrFormat ? ` ${hdr.hdrFormat.toUpperCase()}` : ""}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Video Info */}
@@ -521,6 +619,25 @@ function AppInter() {
           </TouchableOpacity>
         </View>
 
+        {/* External subtitle / audio */}
+        <View style={styles.urlContainer}>
+          <TextInput
+            style={styles.urlInput}
+            value={extUrl}
+            onChangeText={setExtUrl}
+            placeholder="External sub / audio URL..."
+            placeholderTextColor="#666"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TouchableOpacity style={styles.loadBtn} onPress={handleAddSubtitle}>
+            <Text style={styles.loadBtnText}>+Sub</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.loadBtn} onPress={handleAddAudio}>
+            <Text style={styles.loadBtnText}>+Audio</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Media Info Panel */}
         {mediaInfo && (
           <View style={styles.mediaInfoPanel}>
@@ -598,6 +715,23 @@ function AppInter() {
                 <Text style={styles.mediaInfoValue}>
                   {mediaInfo.colorspace || "N/A"}
                 </Text>
+              </View>
+
+              <View style={styles.mediaInfoRow}>
+                <Text style={styles.mediaInfoLabel}>HDR</Text>
+                <View style={styles.mediaInfoValueRow}>
+                  <View
+                    style={[
+                      styles.hwdecDot,
+                      { backgroundColor: mediaInfo.isHdr ? "#4ade80" : "#666" },
+                    ]}
+                  />
+                  <Text style={styles.mediaInfoValue}>
+                    {mediaInfo.isHdr
+                      ? `${mediaInfo.hdrFormat.toUpperCase()}${hdr?.hdrActive ? " (active)" : ""}`
+                      : "SDR"}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
@@ -935,6 +1069,42 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#4a9eff",
     borderRadius: 2,
+  },
+  progressBarBuffered: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    height: "100%",
+    backgroundColor: "#555",
+    borderRadius: 2,
+  },
+  statsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+    paddingHorizontal: 20,
+  },
+  stateBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  hdrBadge: {
+    backgroundColor: "#7c3aed",
+  },
+  stateBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  statsText: {
+    color: "#aaa",
+    fontSize: 12,
+    fontVariant: ["tabular-nums"],
   },
   infoText: {
     color: "#666",

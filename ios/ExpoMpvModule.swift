@@ -16,7 +16,8 @@ public class ExpoMpvModule: Module {
         "onEnd",
         "onBuffer",
         "onSeek",
-        "onVolumeChange"
+        "onVolumeChange",
+        "onHdrStateChange"
       )
 
       // MARK: - Props
@@ -104,7 +105,7 @@ public class ExpoMpvModule: Module {
       }.runOnQueue(.main)
 
       AsyncFunction("addSubtitle") { (view: ExpoMpvView, path: String, flag: String?, title: String?, lang: String?) in
-        view.addSubtitle(path, flag: flag ?? "auto", title: title, lang: lang)
+        view.addSubtitle(path, flag: flag ?? "select", title: title, lang: lang)
       }.runOnQueue(.main)
 
       AsyncFunction("removeSubtitle") { (view: ExpoMpvView, trackId: Int) in
@@ -113,6 +114,14 @@ public class ExpoMpvModule: Module {
 
       AsyncFunction("reloadSubtitles") { (view: ExpoMpvView) in
         view.reloadSubtitles()
+      }.runOnQueue(.main)
+
+      AsyncFunction("addAudio") { (view: ExpoMpvView, path: String, flag: String?, title: String?, lang: String?) in
+        view.addAudio(path, flag: flag ?? "select", title: title, lang: lang)
+      }.runOnQueue(.main)
+
+      AsyncFunction("removeAudio") { (view: ExpoMpvView, trackId: Int) in
+        view.removeAudio(trackId)
       }.runOnQueue(.main)
 
       AsyncFunction("setSubtitleDelay") { (view: ExpoMpvView, seconds: Double) in

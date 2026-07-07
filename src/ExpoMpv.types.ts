@@ -2,15 +2,52 @@ import type { StyleProp, ViewStyle } from 'react-native';
 
 // MARK: - Event Payloads
 
+/**
+ * High-level playback state derived natively from mpv properties.
+ *
+ * - `idle`: no source loaded (before loadfile, or after stop).
+ * - `loading`: source is loading — from loadfile until the first frame is
+ *   rendered (mpv `core-idle` true but not stalled on cache).
+ * - `playing`: actively rendering frames.
+ * - `paused`: paused by the user.
+ * - `buffering`: playback stalled waiting for the network cache
+ *   (mpv `paused-for-cache`).
+ * - `ended`: playback reached end of file.
+ */
+export type PlaybackState = 'idle' | 'loading' | 'playing' | 'paused' | 'buffering' | 'ended';
+
 export type PlaybackStateChangeEvent = {
-  state: 'playing' | 'paused' | 'stopped';
+  state: PlaybackState;
+  /** Whether the user intends playback to run (i.e. not paused). */
   isPlaying: boolean;
 };
 
 export type ProgressEvent = {
+  /** Current playback position in seconds. */
   position: number;
+  /** Total duration in seconds. */
   duration: number;
+  /**
+   * Seconds of media buffered ahead of the current position
+   * (mpv `demuxer-cache-duration`).
+   */
   bufferedDuration: number;
+  /**
+   * Absolute timeline position (seconds) up to which media is buffered
+   * (mpv `demuxer-cache-time`). Use `bufferedPosition / duration` to draw the
+   * buffered range on a seek bar. May be 0 when mpv can't estimate it.
+   */
+  bufferedPosition: number;
+  /**
+   * Network read rate in bytes per second
+   * (mpv `demuxer-cache-state.raw-input-rate`). 0 when unknown / local file.
+   */
+  bufferRate: number;
+  /**
+   * Cache fill percentage (0-100) while stalled for buffering
+   * (mpv `cache-buffering-state`). 100 when not buffering.
+   */
+  bufferingPercent: number;
 };
 
 export type LoadEvent = {
@@ -36,6 +73,21 @@ export type SeekEvent = {};
 export type VolumeChangeEvent = {
   volume: number;
   muted: boolean;
+};
+
+export type HdrStateChangeEvent = {
+  /** The current media is HDR (mpv `video-params/sig-peak` > 1). */
+  isHdr: boolean;
+  /**
+   * HDR is actually being displayed: the media is HDR AND the screen supports
+   * EDR (`potentialEDRHeadroom` > 1). When false on HDR media, the device/screen
+   * can't show HDR and mpv tone-maps to SDR.
+   */
+  hdrActive: boolean;
+  /** Reference peak brightness relative to SDR (mpv `video-params/sig-peak`). */
+  sigPeak: number;
+  /** Transfer function: "pq" (HDR10/Dolby Vision), "hlg", or "" for SDR. */
+  hdrFormat: string;
 };
 
 export type PlaybackInfo = {
@@ -94,6 +146,10 @@ export type MediaInfo = {
   pixelFormat: string;
   /** Color space (e.g. "bt.709", "bt.2020-ncl") */
   colorspace: string;
+  /** Whether the media is HDR (transfer function is PQ or HLG). */
+  isHdr: boolean;
+  /** Transfer function / gamma (e.g. "pq", "hlg", "bt.1886"). */
+  hdrFormat: string;
 };
 
 // MARK: - Module Events (non-view)
@@ -180,6 +236,11 @@ export type ExpoMpvViewProps = {
    */
   onVolumeChange?: (event: { nativeEvent: VolumeChangeEvent }) => void;
 
+  /**
+   * Called when the HDR state changes (HDR content detected / display support).
+   */
+  onHdrStateChange?: (event: { nativeEvent: HdrStateChangeEvent }) => void;
+
   style?: StyleProp<ViewStyle>;
 };
 
@@ -197,10 +258,22 @@ export type ExpoMpvViewRef = {
   setMuted: (muted: boolean) => Promise<void>;
   setSubtitleTrack: (trackId: number) => Promise<void>;
   setAudioTrack: (trackId: number) => Promise<void>;
-  /** Load an external subtitle file (local path or URL). */
+  /**
+   * Load an external subtitle file (local path or URL).
+   * `flag` defaults to `"select"` (shows the subtitle immediately). Pass
+   * `"auto"` to add it without selecting, then call `setSubtitleTrack`.
+   */
   addSubtitle: (path: string, flag?: string, title?: string, lang?: string) => Promise<void>;
   /** Remove a subtitle track by ID. */
   removeSubtitle: (trackId: number) => Promise<void>;
+  /**
+   * Load an external audio file (local path or URL).
+   * `flag` defaults to `"select"` (makes it the active audio track). Pass
+   * `"auto"` to add it without selecting, then call `setAudioTrack`.
+   */
+  addAudio: (path: string, flag?: string, title?: string, lang?: string) => Promise<void>;
+  /** Remove an audio track by ID. */
+  removeAudio: (trackId: number) => Promise<void>;
   /** Reload current subtitles. */
   reloadSubtitles: () => Promise<void>;
   /** Set subtitle delay in seconds (positive = later, negative = earlier). */
