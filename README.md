@@ -15,7 +15,7 @@ On iOS it uses [MPVKit](https://github.com/mpvkit/MPVKit). On Android it integra
 - Play/pause, seek, speed, volume, mute, loop
 - Unified playback state machine (`idle / loading / playing / paused / buffering / ended`)
 - Buffering stats: buffered position (for the seek bar), download rate, cache fill %
-- HDR / Dolby Vision auto-detection and passthrough on iOS (`onHdrStateChange`)
+- HDR / Dolby Vision detection + libplacebo tone-mapping on iOS (`onHdrStateChange`)
 - Subtitle track selection (embedded + external), audio track selection
 - External subtitle / audio loading (`addSubtitle` / `addAudio`)
 - Runtime `hwdec` selection (iOS: `videotoolbox`, Android: `mediacodec`)

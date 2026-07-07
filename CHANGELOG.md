@@ -14,10 +14,11 @@
     for drawing the buffered range on a seek bar.
   - `bufferRate` — network read rate in bytes/sec (`demuxer-cache-state.raw-input-rate`).
   - `bufferingPercent` — cache fill 0–100 while stalled (`cache-buffering-state`).
-- **HDR / Dolby Vision auto-detect & passthrough.** Sets `target-colorspace-hint=yes`
-  at init on device so mpv + libplacebo + libdovi automatically pass through / tone-map
-  HDR & DV per content. New `onHdrStateChange` event (`{ isHdr, hdrActive, sigPeak,
+- **HDR / Dolby Vision detection.** libplacebo (vo=gpu-next) decodes and tone-maps
+  HDR & DV content. New `onHdrStateChange` event (`{ isHdr, hdrActive, sigPeak,
   hdrFormat }`) and `getMediaInfo()` now includes `isHdr` / `hdrFormat`.
+  (Note: `target-colorspace-hint`/HDR passthrough is not forced on iOS — it can break
+  hardware decode with vo=gpu-next.)
 - **External subtitles now show by default.** `addSubtitle` defaults its flag to
   `select` (mpv's own default) instead of `auto`, so an added subtitle is displayed
   immediately. Pass `auto` to add without selecting.

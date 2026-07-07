@@ -117,12 +117,11 @@ class ExpoMpvView: ExpoView {
     setOptionString("gpu-api", "vulkan")
     setOptionString("gpu-context", "moltenvk")
     setOptionString("hwdec", pendingHwdec)
-    // HDR / Dolby Vision passthrough. Must be set before mpv_initialize and
-    // requires vo=gpu-next (device only). With this enabled, mpv + libplacebo +
-    // libdovi automatically pass through / tone-map HDR & DV per content, and
-    // the moltenvk backend drives the CAMetalLayer's EDR mode. `auto` is not
-    // supported on moltenvk, so we use `yes`.
-    setOptionString("target-colorspace-hint", "yes")
+    // NOTE: We intentionally do NOT set `target-colorspace-hint=yes` here.
+    // On iOS + vo=gpu-next it can break hardware decode / rendering (neither the
+    // MPVKit demo nor streamyfin enable it on iOS — streamyfin only sets it on
+    // tvOS with vo=avfoundation). HDR/Dolby Vision content is still decoded and
+    // tone-mapped by libplacebo; we report HDR via onHdrStateChange (sig-peak).
     #endif
 
     // General options
@@ -340,6 +339,10 @@ class ExpoMpvView: ExpoView {
             let endFile = data.assumingMemoryBound(to: mpv_event_end_file.self).pointee
             self.log("EVENT: end-file reason=\(endFile.reason) error=\(endFile.error)")
             DispatchQueue.main.async {
+              // NOTE: do NOT clear hasSource here. END_FILE also fires for the
+              // previous file when switching via `loadfile replace` (reason=stop),
+              // which would otherwise flip the state to "idle" right after the new
+              // load. Only the explicit stop() method clears hasSource.
               let reason: String
               switch endFile.reason {
               case MPV_END_FILE_REASON_EOF:
@@ -350,13 +353,10 @@ class ExpoMpvView: ExpoView {
                 let msg = "Playback error: \(errStr) (code \(endFile.error))"
                 self.log("ERROR: \(msg)")
                 self.onError(["error": msg])
-                self.hasSource = false
               case MPV_END_FILE_REASON_STOP:
                 reason = "stopped"
-                self.hasSource = false
               default:
                 reason = "unknown"
-                self.hasSource = false
               }
               self.onEnd(["reason": reason])
               if reason == "ended" {
@@ -366,7 +366,7 @@ class ExpoMpvView: ExpoView {
                 self.onPlaybackStateChange(["state": "ended", "isPlaying": false])
                 self.stopProgressTimer()
               } else {
-                self.emitStateChange() // -> idle
+                self.emitStateChange()
               }
             }
           }
