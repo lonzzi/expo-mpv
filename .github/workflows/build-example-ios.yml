@@ -80,15 +80,30 @@ jobs:
         working-directory: example/ios
         run: pod install
 
-      - name: Build (iOS Simulator, unsigned)
+      - name: Build unsigned archive (iOS device)
         working-directory: example/ios
         run: |
           xcodebuild \
             -workspace expompvexample.xcworkspace \
             -scheme expompvexample \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build/DD \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/expompvexample.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
-            build
+            CODE_SIGN_IDENTITY="" \
+            clean archive
+
+      - name: Package IPA (unsigned)
+        working-directory: example/ios
+        run: |
+          mkdir -p Payload
+          cp -r build/expompvexample.xcarchive/Products/Applications/*.app Payload/
+          zip -r expo-mpv-example.ipa Payload
+          ls -lh expo-mpv-example.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: expo-mpv-example-ios
+          path: example/ios/expo-mpv-example.ipa
+          if-no-files-found: error
