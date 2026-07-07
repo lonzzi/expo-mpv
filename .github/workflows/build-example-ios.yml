@@ -65,6 +65,12 @@ jobs:
       - name: Install module (root) dependencies
         run: bun install
 
+      # build/ is gitignored, but Metro resolves `expo-mpv` (via the example's
+      # metro.config extraNodeModules → repo root) to build/index.js when the
+      # Release archive bundles JS. Compile it here.
+      - name: Build module (TypeScript)
+        run: bun run build
+
       - name: Install example dependencies
         working-directory: example
         run: bun install
