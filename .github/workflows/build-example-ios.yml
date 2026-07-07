@@ -60,6 +60,11 @@ jobs:
           path: ios/Frameworks
           key: mpvkit-frameworks-${{ hashFiles('plugin/src/withExpoMpv.ts') }}
 
+      # Root devDeps include `expo`, which the config plugin (loaded from
+      # ../app.plugin.js) needs to resolve `expo/config-plugins` during prebuild.
+      - name: Install module (root) dependencies
+        run: bun install
+
       - name: Install example dependencies
         working-directory: example
         run: bun install
