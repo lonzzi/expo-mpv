@@ -1,4 +1,4 @@
-import { ExpoMpvView } from "expo-mpv";
+import { ExpoMpvView } from 'expo-mpv';
 import type {
   ExpoMpvViewRef,
   ProgressEvent,
@@ -11,8 +11,8 @@ import type {
   HdrStateChangeEvent,
   TrackInfo,
   MediaInfo,
-} from "expo-mpv";
-import { useCallback, useRef, useState } from "react";
+} from 'expo-mpv';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -23,8 +23,8 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-} from "react-native";
-import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
+} from 'react-native';
+import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 
 interface TestVideo {
   label: string;
@@ -34,54 +34,54 @@ interface TestVideo {
 
 const TEST_VIDEOS: TestVideo[] = [
   {
-    label: "Big Buck Bunny",
-    tags: ["1080p", "SDR", "H.264"],
-    url: "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_1MB.mp4",
+    label: 'Big Buck Bunny',
+    tags: ['1080p', 'SDR', 'H.264'],
+    url: 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_1MB.mp4',
   },
   {
-    label: "Sintel Trailer",
-    tags: ["1080p", "SDR"],
-    url: "https://media.w3.org/2010/05/sintel/trailer.mp4",
+    label: 'Sintel Trailer',
+    tags: ['1080p', 'SDR'],
+    url: 'https://media.w3.org/2010/05/sintel/trailer.mp4',
   },
   {
-    label: "HDR10 Tone-Map",
-    tags: ["HDR", "HEVC"],
-    url: "https://github.com/mpvkit/video-test/raw/master/resources/HDR10_ToneMapping_Test_240_1000_nits.mp4",
+    label: 'HDR10 Tone-Map',
+    tags: ['HDR', 'HEVC'],
+    url: 'https://github.com/mpvkit/video-test/raw/master/resources/HDR10_ToneMapping_Test_240_1000_nits.mp4',
   },
   {
-    label: "Dolby Vision P5",
-    tags: ["DV", "HDR", "HEVC"],
-    url: "https://github.com/mpvkit/video-test/raw/master/resources/DolbyVision_P5.mp4",
+    label: 'Dolby Vision P5',
+    tags: ['DV', 'HDR', 'HEVC'],
+    url: 'https://github.com/mpvkit/video-test/raw/master/resources/DolbyVision_P5.mp4',
   },
   {
-    label: "Dolby Vision P8",
-    tags: ["DV", "HDR", "HEVC"],
-    url: "https://github.com/mpvkit/video-test/raw/master/resources/DolbyVision_P8.mp4",
+    label: 'Dolby Vision P8',
+    tags: ['DV', 'HDR', 'HEVC'],
+    url: 'https://github.com/mpvkit/video-test/raw/master/resources/DolbyVision_P8.mp4',
   },
   {
-    label: "DV + Atmos (Apple)",
-    tags: ["4K", "DV", "HLS"],
-    url: "https://devstreaming-cdn.apple.com/videos/streaming/examples/adv_dv_atmos/main.m3u8",
+    label: 'DV + Atmos (Apple)',
+    tags: ['4K', 'DV', 'HLS'],
+    url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/adv_dv_atmos/main.m3u8',
   },
   {
-    label: "Apple HEVC HLS",
-    tags: ["HLS", "HEVC"],
-    url: "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8",
+    label: 'Apple HEVC HLS',
+    tags: ['HLS', 'HEVC'],
+    url: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8',
   },
   {
-    label: "Jellyfish HEVC",
-    tags: ["1080p", "HEVC"],
-    url: "https://test-videos.co.uk/vids/jellyfish/mp4/h265/1080/Jellyfish_1080_10s_5MB.mp4",
+    label: 'Jellyfish HEVC',
+    tags: ['1080p', 'HEVC'],
+    url: 'https://test-videos.co.uk/vids/jellyfish/mp4/h265/1080/Jellyfish_1080_10s_5MB.mp4',
   },
   {
-    label: "Tears HLS",
-    tags: ["1080p", "HLS"],
-    url: "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
+    label: 'Tears HLS',
+    tags: ['1080p', 'HLS'],
+    url: 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
   },
   {
-    label: "DASH Adaptive",
-    tags: ["Adaptive", "DASH"],
-    url: "https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd",
+    label: 'DASH Adaptive',
+    tags: ['Adaptive', 'DASH'],
+    url: 'https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd',
   },
 ];
 
@@ -103,14 +103,14 @@ function AppInter() {
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState(TEST_VIDEOS[1].url);
-  const [inputUrl, setInputUrl] = useState("");
+  const [inputUrl, setInputUrl] = useState('');
   // External subtitle / audio demo (prefilled with a sample that matches Sintel).
   const [extUrl, setExtUrl] = useState(
-    "https://durian.blender.org/wp-content/content/subtitles/sintel_en.srt"
+    'https://durian.blender.org/wp-content/content/subtitles/sintel_en.srt',
   );
   const [currentVideoIndex, setCurrentVideoIndex] = useState(1);
   const [isSourceLoading, setIsSourceLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState("Loading stream...");
+  const [loadingMessage, setLoadingMessage] = useState('Loading stream...');
   const [tracks, setTracks] = useState<TracksByType>({
     video: [],
     audio: [],
@@ -121,13 +121,11 @@ function AppInter() {
     aid: 0,
     sid: 0,
   });
-  const [hwdecMode, setHwdecMode] = useState(
-    Platform.OS === "ios" ? "videotoolbox" : "mediacodec"
-  );
+  const [hwdecMode, setHwdecMode] = useState(Platform.OS === 'ios' ? 'videotoolbox' : 'mediacodec');
   const [mediaInfo, setMediaInfo] = useState<MediaInfo | null>(null);
 
   // New: unified playback state + buffering stats + HDR
-  const [playbackState, setPlaybackState] = useState<PlaybackState>("idle");
+  const [playbackState, setPlaybackState] = useState<PlaybackState>('idle');
   const [bufferedPosition, setBufferedPosition] = useState(0);
   const [bufferRate, setBufferRate] = useState(0);
   const [bufferingPercent, setBufferingPercent] = useState(100);
@@ -138,7 +136,7 @@ function AppInter() {
       const info = await playerRef.current?.getMediaInfo();
       if (info) setMediaInfo(info);
     } catch (e) {
-      console.log("refreshMediaInfo error:", e);
+      console.log('refreshMediaInfo error:', e);
     }
   }, []);
 
@@ -149,15 +147,15 @@ function AppInter() {
       if (list) {
         const grouped: TracksByType = { video: [], audio: [], sub: [] };
         for (const t of list) {
-          if (t.type === "video") grouped.video.push(t);
-          else if (t.type === "audio") grouped.audio.push(t);
-          else if (t.type === "sub") grouped.sub.push(t);
+          if (t.type === 'video') grouped.video.push(t);
+          else if (t.type === 'audio') grouped.audio.push(t);
+          else if (t.type === 'sub') grouped.sub.push(t);
         }
         setTracks(grouped);
       }
       if (ids) setCurrentTrackIds(ids);
     } catch (e) {
-      console.log("refreshTracks error:", e);
+      console.log('refreshTracks error:', e);
     }
     refreshMediaInfo();
   }, [refreshMediaInfo]);
@@ -167,21 +165,18 @@ function AppInter() {
       setIsPlaying(nativeEvent.isPlaying);
       setPlaybackState(nativeEvent.state);
       // Drive loading UI off the state machine (not just onLoad).
-      if (nativeEvent.state !== "loading") setIsSourceLoading(false);
+      if (nativeEvent.state !== 'loading') setIsSourceLoading(false);
     },
-    []
+    [],
   );
 
-  const onProgress = useCallback(
-    ({ nativeEvent }: { nativeEvent: ProgressEvent }) => {
-      setPosition(nativeEvent.position);
-      setDuration(nativeEvent.duration);
-      setBufferedPosition(nativeEvent.bufferedPosition);
-      setBufferRate(nativeEvent.bufferRate);
-      setBufferingPercent(nativeEvent.bufferingPercent);
-    },
-    []
-  );
+  const onProgress = useCallback(({ nativeEvent }: { nativeEvent: ProgressEvent }) => {
+    setPosition(nativeEvent.position);
+    setDuration(nativeEvent.duration);
+    setBufferedPosition(nativeEvent.bufferedPosition);
+    setBufferRate(nativeEvent.bufferRate);
+    setBufferingPercent(nativeEvent.bufferingPercent);
+  }, []);
 
   const onLoad = useCallback(
     ({ nativeEvent }: { nativeEvent: LoadEvent }) => {
@@ -189,43 +184,34 @@ function AppInter() {
       setVideoSize({ width: nativeEvent.width, height: nativeEvent.height });
       setError(null);
       setIsSourceLoading(false);
-      setLoadingMessage("Loading stream...");
+      setLoadingMessage('Loading stream...');
       setTimeout(() => refreshTracks(), 500);
     },
-    [refreshTracks]
+    [refreshTracks],
   );
 
-  const onError = useCallback(
-    ({ nativeEvent }: { nativeEvent: ErrorEvent }) => {
-      setError(nativeEvent.error);
-      setIsSourceLoading(false);
-    },
-    []
-  );
-
-  const onEnd = useCallback(({ nativeEvent }: { nativeEvent: EndEvent }) => {
-    console.log("Playback ended:", nativeEvent.reason);
+  const onError = useCallback(({ nativeEvent }: { nativeEvent: ErrorEvent }) => {
+    setError(nativeEvent.error);
+    setIsSourceLoading(false);
   }, []);
 
-  const onBuffer = useCallback(
-    ({ nativeEvent }: { nativeEvent: BufferEvent }) => {
-      setIsBuffering(nativeEvent.isBuffering);
-    },
-    []
-  );
+  const onEnd = useCallback(({ nativeEvent }: { nativeEvent: EndEvent }) => {
+    console.log('Playback ended:', nativeEvent.reason);
+  }, []);
 
-  const onHdrStateChange = useCallback(
-    ({ nativeEvent }: { nativeEvent: HdrStateChangeEvent }) => {
-      setHdr(nativeEvent);
-    },
-    []
-  );
+  const onBuffer = useCallback(({ nativeEvent }: { nativeEvent: BufferEvent }) => {
+    setIsBuffering(nativeEvent.isBuffering);
+  }, []);
+
+  const onHdrStateChange = useCallback(({ nativeEvent }: { nativeEvent: HdrStateChangeEvent }) => {
+    setHdr(nativeEvent);
+  }, []);
 
   const beginSourceLoad = useCallback((message: string) => {
     setIsSourceLoading(true);
     setLoadingMessage(message);
     setIsBuffering(false);
-    setPlaybackState("loading");
+    setPlaybackState('loading');
     setPosition(0);
     setDuration(0);
     setBufferedPosition(0);
@@ -239,30 +225,28 @@ function AppInter() {
   }, []);
 
   const formatTime = (seconds: number): string => {
-    if (!isFinite(seconds) || seconds < 0) return "00:00";
+    if (!isFinite(seconds) || seconds < 0) return '00:00';
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
-    if (h > 0)
-      return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
   const progressPercent = duration > 0 ? (position / duration) * 100 : 0;
-  const bufferedPercent =
-    duration > 0 ? Math.min(100, (bufferedPosition / duration) * 100) : 0;
+  const bufferedPercent = duration > 0 ? Math.min(100, (bufferedPosition / duration) * 100) : 0;
 
   const stateColor: Record<PlaybackState, string> = {
-    idle: "#555",
-    loading: "#eab308",
-    playing: "#22c55e",
-    paused: "#3b82f6",
-    buffering: "#eab308",
-    ended: "#6b7280",
+    idle: '#555',
+    loading: '#eab308',
+    playing: '#22c55e',
+    paused: '#3b82f6',
+    buffering: '#eab308',
+    ended: '#6b7280',
   };
 
   const formatRate = (bytesPerSec: number): string => {
-    if (!bytesPerSec || bytesPerSec <= 0) return "—";
+    if (!bytesPerSec || bytesPerSec <= 0) return '—';
     if (bytesPerSec >= 1_000_000) return `${(bytesPerSec / 1_000_000).toFixed(1)} MB/s`;
     if (bytesPerSec >= 1_000) return `${(bytesPerSec / 1_000).toFixed(0)} KB/s`;
     return `${bytesPerSec.toFixed(0)} B/s`;
@@ -283,20 +267,20 @@ function AppInter() {
   };
 
   const hwdecOptions =
-    Platform.OS === "ios"
-      ? ["videotoolbox", "videotoolbox-copy", "no"]
-      : ["mediacodec", "mediacodec-copy", "no"];
+    Platform.OS === 'ios'
+      ? ['videotoolbox', 'videotoolbox-copy', 'no']
+      : ['mediacodec', 'mediacodec-copy', 'no'];
 
   const cycleHwdec = () => {
     const nextIndex = (hwdecOptions.indexOf(hwdecMode) + 1) % hwdecOptions.length;
     const newMode = hwdecOptions[nextIndex];
     setHwdecMode(newMode);
-    playerRef.current?.setPropertyString("hwdec", newMode);
+    playerRef.current?.setPropertyString('hwdec', newMode);
     setTimeout(() => refreshMediaInfo(), 500);
   };
 
   const formatBitrate = (bps: number): string => {
-    if (bps <= 0) return "N/A";
+    if (bps <= 0) return 'N/A';
     if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(1)} Mbps`;
     if (bps >= 1_000) return `${(bps / 1_000).toFixed(0)} Kbps`;
     return `${bps.toFixed(0)} bps`;
@@ -308,13 +292,13 @@ function AppInter() {
     setCurrentVideoIndex(index);
     setSource(video.url);
     setError(null);
-    setInputUrl("");
+    setInputUrl('');
   };
 
   const handleLoadUrl = () => {
     const url = inputUrl.trim();
     if (!url) return;
-    beginSourceLoad("Loading custom URL...");
+    beginSourceLoad('Loading custom URL...');
     setCurrentVideoIndex(-1);
     setSource(url);
     setError(null);
@@ -324,21 +308,21 @@ function AppInter() {
     const url = extUrl.trim();
     if (!url) return;
     // Default flag is "select", so the subtitle shows immediately.
-    playerRef.current?.addSubtitle(url, "select", "External Sub");
+    playerRef.current?.addSubtitle(url, 'select', 'External Sub');
     setTimeout(() => refreshTracks(), 500);
   };
 
   const handleAddAudio = () => {
     const url = extUrl.trim();
     if (!url) return;
-    playerRef.current?.addAudio(url, "select", "External Audio");
+    playerRef.current?.addAudio(url, 'select', 'External Audio');
     setTimeout(() => refreshTracks(), 500);
   };
 
-  const selectTrack = (type: "audio" | "sub" | "video", id: number) => {
-    if (type === "audio") {
+  const selectTrack = (type: 'audio' | 'sub' | 'video', id: number) => {
+    if (type === 'audio') {
       playerRef.current?.setAudioTrack(id);
-    } else if (type === "sub") {
+    } else if (type === 'sub') {
       playerRef.current?.setSubtitleTrack(id);
     }
     setTimeout(() => refreshTracks(), 300);
@@ -358,23 +342,20 @@ function AppInter() {
     if (t.title) parts.push(t.title);
     if (t.lang) parts.push(`[${t.lang}]`);
     if (t.codec) parts.push(t.codec);
-    if (t.type === "audio" && t.channelCount) {
+    if (t.type === 'audio' && t.channelCount) {
       parts.push(`${t.channelCount}ch`);
       if (t.sampleRate) parts.push(`${t.sampleRate}Hz`);
     }
-    if (t.type === "video" && t.width && t.height) {
+    if (t.type === 'video' && t.width && t.height) {
       parts.push(`${t.width}x${t.height}`);
       if (t.fps) parts.push(`${t.fps.toFixed(1)}fps`);
     }
-    if (t.isDefault) parts.push("(default)");
-    if (t.isExternal) parts.push("(ext)");
-    return parts.length > 0 ? parts.join(" ") : `Track ${t.id}`;
+    if (t.isDefault) parts.push('(default)');
+    if (t.isExternal) parts.push('(ext)');
+    return parts.length > 0 ? parts.join(' ') : `Track ${t.id}`;
   };
 
-  const hasAnyTracks =
-    tracks.video.length > 0 ||
-    tracks.audio.length > 0 ||
-    tracks.sub.length > 0;
+  const hasAnyTracks = tracks.video.length > 0 || tracks.audio.length > 0 || tracks.sub.length > 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -393,10 +374,7 @@ function AppInter() {
             {TEST_VIDEOS.map((video, index) => (
               <TouchableOpacity
                 key={index}
-                style={[
-                  styles.videoChip,
-                  currentVideoIndex === index && styles.videoChipActive,
-                ]}
+                style={[styles.videoChip, currentVideoIndex === index && styles.videoChipActive]}
                 onPress={() => selectVideo(index)}
               >
                 <Text
@@ -413,13 +391,13 @@ function AppInter() {
                       key={tag}
                       style={[
                         styles.tag,
-                        tag.includes("HDR") && styles.tagHDR,
-                        tag.includes("DV") && styles.tagDV,
-                        tag.includes("4K") && styles.tag4K,
-                        tag.includes("HEVC") && styles.tagHEVC,
-                        tag.includes("HLS") && styles.tagHLS,
-                        tag.includes("DASH") && styles.tagDASH,
-                        tag.includes("60") && styles.tag60,
+                        tag.includes('HDR') && styles.tagHDR,
+                        tag.includes('DV') && styles.tagDV,
+                        tag.includes('4K') && styles.tag4K,
+                        tag.includes('HEVC') && styles.tagHEVC,
+                        tag.includes('HLS') && styles.tagHLS,
+                        tag.includes('DASH') && styles.tagDASH,
+                        tag.includes('60') && styles.tag60,
                       ]}
                     >
                       <Text style={styles.tagText}>{tag}</Text>
@@ -448,22 +426,22 @@ function AppInter() {
             onSeek={() => {}}
             onVolumeChange={() => {}}
           />
-          {(playbackState === "loading" ||
-            playbackState === "buffering" ||
+          {(playbackState === 'loading' ||
+            playbackState === 'buffering' ||
             isSourceLoading ||
             isBuffering) && (
             <View style={styles.loadingOverlay}>
               <View style={styles.loadingCard}>
                 <ActivityIndicator size="large" color="#fff" />
                 <Text style={styles.loadingTitle}>
-                  {playbackState === "buffering"
+                  {playbackState === 'buffering'
                     ? `Buffering ${Math.round(bufferingPercent)}%`
                     : loadingMessage}
                 </Text>
                 <Text style={styles.loadingSubtitle}>
-                  {playbackState === "buffering"
+                  {playbackState === 'buffering'
                     ? `Fetching more data · ${formatRate(bufferRate)}`
-                    : "Waiting for metadata and first frame"}
+                    : 'Waiting for metadata and first frame'}
                 </Text>
               </View>
             </View>
@@ -481,18 +459,16 @@ function AppInter() {
         {currentVideoIndex >= 0 && (
           <View style={styles.nowPlaying}>
             <Text style={styles.nowPlayingLabel}>Now Playing:</Text>
-            <Text style={styles.nowPlayingTitle}>
-              {TEST_VIDEOS[currentVideoIndex].label}
-            </Text>
+            <Text style={styles.nowPlayingTitle}>{TEST_VIDEOS[currentVideoIndex].label}</Text>
             <View style={styles.tagRow}>
               {TEST_VIDEOS[currentVideoIndex].tags.map((tag) => (
                 <View
                   key={tag}
                   style={[
                     styles.tag,
-                    tag.includes("HDR") && styles.tagHDR,
-                    tag.includes("DV") && styles.tagDV,
-                    tag.includes("4K") && styles.tag4K,
+                    tag.includes('HDR') && styles.tagHDR,
+                    tag.includes('DV') && styles.tagDV,
+                    tag.includes('4K') && styles.tag4K,
                   ]}
                 >
                   <Text style={styles.tagText}>{tag}</Text>
@@ -506,12 +482,8 @@ function AppInter() {
         <View style={styles.progressContainer}>
           <Text style={styles.timeText}>{formatTime(position)}</Text>
           <View style={styles.progressBarBg}>
-            <View
-              style={[styles.progressBarBuffered, { width: `${bufferedPercent}%` }]}
-            />
-            <View
-              style={[styles.progressBarFill, { width: `${progressPercent}%` }]}
-            />
+            <View style={[styles.progressBarBuffered, { width: `${bufferedPercent}%` }]} />
+            <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
           </View>
           <Text style={styles.timeText}>{formatTime(duration)}</Text>
         </View>
@@ -527,8 +499,8 @@ function AppInter() {
           {hdr?.isHdr && (
             <View style={[styles.stateBadge, styles.hdrBadge]}>
               <Text style={styles.stateBadgeText}>
-                {hdr.hdrActive ? "HDR ON" : "HDR"}
-                {hdr.hdrFormat ? ` ${hdr.hdrFormat.toUpperCase()}` : ""}
+                {hdr.hdrActive ? 'HDR ON' : 'HDR'}
+                {hdr.hdrFormat ? ` ${hdr.hdrFormat.toUpperCase()}` : ''}
               </Text>
             </View>
           )}
@@ -554,13 +526,10 @@ function AppInter() {
             style={[styles.controlBtn, styles.playBtn]}
             onPress={() => playerRef.current?.togglePlay()}
           >
-            <Text style={styles.playBtnText}>{isPlaying ? "||" : ">"}</Text>
+            <Text style={styles.playBtnText}>{isPlaying ? '||' : '>'}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.controlBtn}
-            onPress={() => playerRef.current?.seekBy(10)}
-          >
+          <TouchableOpacity style={styles.controlBtn} onPress={() => playerRef.current?.seekBy(10)}>
             <Text style={styles.controlText}>+10s</Text>
           </TouchableOpacity>
         </View>
@@ -572,33 +541,22 @@ function AppInter() {
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.secondaryBtn} onPress={toggleMute}>
+            <Text style={styles.secondaryBtnText}>{muted ? 'Unmute' : 'Mute'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.secondaryBtn} onPress={toggleSubtitles}>
             <Text style={styles.secondaryBtnText}>
-              {muted ? "Unmute" : "Mute"}
+              {currentTrackIds.sid > 0 ? 'Sub OFF' : 'Sub ON'}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={toggleSubtitles}
-          >
+          <TouchableOpacity style={styles.secondaryBtn} onPress={cycleHwdec}>
             <Text style={styles.secondaryBtnText}>
-              {currentTrackIds.sid > 0 ? "Sub OFF" : "Sub ON"}
+              HW: {hwdecMode === 'no' ? 'off' : hwdecMode}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={cycleHwdec}
-          >
-            <Text style={styles.secondaryBtnText}>
-              HW: {hwdecMode === "no" ? "off" : hwdecMode}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={refreshTracks}
-          >
+          <TouchableOpacity style={styles.secondaryBtn} onPress={refreshTracks}>
             <Text style={styles.secondaryBtnText}>Refresh</Text>
           </TouchableOpacity>
         </View>
@@ -650,71 +608,55 @@ function AppInter() {
                   <View
                     style={[
                       styles.hwdecDot,
-                      { backgroundColor: mediaInfo.hwdecCurrent ? "#4ade80" : "#f87171" },
+                      { backgroundColor: mediaInfo.hwdecCurrent ? '#4ade80' : '#f87171' },
                     ]}
                   />
-                  <Text style={styles.mediaInfoValue}>
-                    {mediaInfo.hwdecCurrent || "Software"}
-                  </Text>
+                  <Text style={styles.mediaInfoValue}>{mediaInfo.hwdecCurrent || 'Software'}</Text>
                 </View>
               </View>
 
               <View style={styles.mediaInfoRow}>
                 <Text style={styles.mediaInfoLabel}>Video Codec</Text>
-                <Text style={styles.mediaInfoValue}>
-                  {mediaInfo.videoCodec || "N/A"}
-                </Text>
+                <Text style={styles.mediaInfoValue}>{mediaInfo.videoCodec || 'N/A'}</Text>
               </View>
 
               <View style={styles.mediaInfoRow}>
                 <Text style={styles.mediaInfoLabel}>Resolution</Text>
                 <Text style={styles.mediaInfoValue}>
-                  {mediaInfo.width > 0
-                    ? `${mediaInfo.width}x${mediaInfo.height}`
-                    : "N/A"}
+                  {mediaInfo.width > 0 ? `${mediaInfo.width}x${mediaInfo.height}` : 'N/A'}
                 </Text>
               </View>
 
               <View style={styles.mediaInfoRow}>
                 <Text style={styles.mediaInfoLabel}>Frame Rate</Text>
                 <Text style={styles.mediaInfoValue}>
-                  {mediaInfo.fps > 0 ? `${mediaInfo.fps.toFixed(2)} fps` : "N/A"}
+                  {mediaInfo.fps > 0 ? `${mediaInfo.fps.toFixed(2)} fps` : 'N/A'}
                 </Text>
               </View>
 
               <View style={styles.mediaInfoRow}>
                 <Text style={styles.mediaInfoLabel}>Video Bitrate</Text>
-                <Text style={styles.mediaInfoValue}>
-                  {formatBitrate(mediaInfo.videoBitrate)}
-                </Text>
+                <Text style={styles.mediaInfoValue}>{formatBitrate(mediaInfo.videoBitrate)}</Text>
               </View>
 
               <View style={styles.mediaInfoRow}>
                 <Text style={styles.mediaInfoLabel}>Audio Codec</Text>
-                <Text style={styles.mediaInfoValue}>
-                  {mediaInfo.audioCodec || "N/A"}
-                </Text>
+                <Text style={styles.mediaInfoValue}>{mediaInfo.audioCodec || 'N/A'}</Text>
               </View>
 
               <View style={styles.mediaInfoRow}>
                 <Text style={styles.mediaInfoLabel}>Audio Bitrate</Text>
-                <Text style={styles.mediaInfoValue}>
-                  {formatBitrate(mediaInfo.audioBitrate)}
-                </Text>
+                <Text style={styles.mediaInfoValue}>{formatBitrate(mediaInfo.audioBitrate)}</Text>
               </View>
 
               <View style={styles.mediaInfoRow}>
                 <Text style={styles.mediaInfoLabel}>Pixel Format</Text>
-                <Text style={styles.mediaInfoValue}>
-                  {mediaInfo.pixelFormat || "N/A"}
-                </Text>
+                <Text style={styles.mediaInfoValue}>{mediaInfo.pixelFormat || 'N/A'}</Text>
               </View>
 
               <View style={styles.mediaInfoRow}>
                 <Text style={styles.mediaInfoLabel}>Color Space</Text>
-                <Text style={styles.mediaInfoValue}>
-                  {mediaInfo.colorspace || "N/A"}
-                </Text>
+                <Text style={styles.mediaInfoValue}>{mediaInfo.colorspace || 'N/A'}</Text>
               </View>
 
               <View style={styles.mediaInfoRow}>
@@ -723,13 +665,13 @@ function AppInter() {
                   <View
                     style={[
                       styles.hwdecDot,
-                      { backgroundColor: mediaInfo.isHdr ? "#4ade80" : "#666" },
+                      { backgroundColor: mediaInfo.isHdr ? '#4ade80' : '#666' },
                     ]}
                   />
                   <Text style={styles.mediaInfoValue}>
                     {mediaInfo.isHdr
-                      ? `${mediaInfo.hdrFormat.toUpperCase()}${hdr?.hdrActive ? " (active)" : ""}`
-                      : "SDR"}
+                      ? `${mediaInfo.hdrFormat.toUpperCase()}${hdr?.hdrActive ? ' (active)' : ''}`
+                      : 'SDR'}
                   </Text>
                 </View>
               </View>
@@ -745,23 +687,15 @@ function AppInter() {
             {/* Video Tracks */}
             {tracks.video.length > 0 && (
               <View style={styles.trackSection}>
-                <Text style={styles.trackSectionTitle}>
-                  Video Tracks ({tracks.video.length})
-                </Text>
+                <Text style={styles.trackSectionTitle}>Video Tracks ({tracks.video.length})</Text>
                 {tracks.video.map((t) => (
                   <View
                     key={`v-${t.id}`}
-                    style={[
-                      styles.trackItem,
-                      t.selected && styles.trackItemSelected,
-                    ]}
+                    style={[styles.trackItem, t.selected && styles.trackItemSelected]}
                   >
                     <Text style={styles.trackId}>V{t.id}</Text>
                     <Text
-                      style={[
-                        styles.trackLabel,
-                        t.selected && styles.trackLabelSelected,
-                      ]}
+                      style={[styles.trackLabel, t.selected && styles.trackLabelSelected]}
                       numberOfLines={2}
                     >
                       {trackLabel(t)}
@@ -775,24 +709,16 @@ function AppInter() {
             {/* Audio Tracks */}
             {tracks.audio.length > 0 && (
               <View style={styles.trackSection}>
-                <Text style={styles.trackSectionTitle}>
-                  Audio Tracks ({tracks.audio.length})
-                </Text>
+                <Text style={styles.trackSectionTitle}>Audio Tracks ({tracks.audio.length})</Text>
                 {tracks.audio.map((t) => (
                   <TouchableOpacity
                     key={`a-${t.id}`}
-                    style={[
-                      styles.trackItem,
-                      t.selected && styles.trackItemSelected,
-                    ]}
-                    onPress={() => selectTrack("audio", t.id)}
+                    style={[styles.trackItem, t.selected && styles.trackItemSelected]}
+                    onPress={() => selectTrack('audio', t.id)}
                   >
                     <Text style={styles.trackId}>A{t.id}</Text>
                     <Text
-                      style={[
-                        styles.trackLabel,
-                        t.selected && styles.trackLabelSelected,
-                      ]}
+                      style={[styles.trackLabel, t.selected && styles.trackLabelSelected]}
                       numberOfLines={2}
                     >
                       {trackLabel(t)}
@@ -806,24 +732,16 @@ function AppInter() {
             {/* Subtitle Tracks */}
             {tracks.sub.length > 0 && (
               <View style={styles.trackSection}>
-                <Text style={styles.trackSectionTitle}>
-                  Subtitle Tracks ({tracks.sub.length})
-                </Text>
+                <Text style={styles.trackSectionTitle}>Subtitle Tracks ({tracks.sub.length})</Text>
                 {tracks.sub.map((t) => (
                   <TouchableOpacity
                     key={`s-${t.id}`}
-                    style={[
-                      styles.trackItem,
-                      t.selected && styles.trackItemSelected,
-                    ]}
-                    onPress={() => selectTrack("sub", t.id)}
+                    style={[styles.trackItem, t.selected && styles.trackItemSelected]}
+                    onPress={() => selectTrack('sub', t.id)}
                   >
                     <Text style={styles.trackId}>S{t.id}</Text>
                     <Text
-                      style={[
-                        styles.trackLabel,
-                        t.selected && styles.trackLabelSelected,
-                      ]}
+                      style={[styles.trackLabel, t.selected && styles.trackLabelSelected]}
                       numberOfLines={2}
                     >
                       {trackLabel(t)}
@@ -838,9 +756,7 @@ function AppInter() {
             {tracks.sub.length === 0 && (
               <View style={styles.trackSection}>
                 <Text style={styles.trackSectionTitle}>Subtitle Tracks</Text>
-                <Text style={styles.noTracksText}>
-                  No subtitle tracks found in this media
-                </Text>
+                <Text style={styles.noTracksText}>No subtitle tracks found in this media</Text>
               </View>
             )}
 
@@ -848,9 +764,8 @@ function AppInter() {
             <View style={styles.trackSection}>
               <Text style={styles.trackSectionTitle}>Current Selection</Text>
               <Text style={styles.selectionText}>
-                VID: {currentTrackIds.vid || "none"} | AID:{" "}
-                {currentTrackIds.aid || "none"} | SID:{" "}
-                {currentTrackIds.sid || "none"}
+                VID: {currentTrackIds.vid || 'none'} | AID: {currentTrackIds.aid || 'none'} | SID:{' '}
+                {currentTrackIds.sid || 'none'}
               </Text>
             </View>
           </View>
@@ -874,7 +789,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#111",
+    backgroundColor: '#111',
   },
   scrollContainer: {
     flex: 1,
@@ -885,12 +800,12 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   title: {
-    color: "#fff",
+    color: '#fff',
     fontSize: 24,
-    fontWeight: "700",
+    fontWeight: '700',
   },
   subtitle: {
-    color: "#888",
+    color: '#888',
     fontSize: 13,
     marginTop: 2,
   },
@@ -900,10 +815,10 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   sectionTitle: {
-    color: "#999",
+    color: '#999',
     fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
+    fontWeight: '600',
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
   },
@@ -911,7 +826,7 @@ const styles = StyleSheet.create({
     flexGrow: 0,
   },
   videoChip: {
-    backgroundColor: "#1e1e2e",
+    backgroundColor: '#1e1e2e',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -919,94 +834,94 @@ const styles = StyleSheet.create({
     minWidth: 120,
     maxWidth: 160,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: '#333',
   },
   videoChipActive: {
-    backgroundColor: "#1a2a4e",
-    borderColor: "#4a9eff",
+    backgroundColor: '#1a2a4e',
+    borderColor: '#4a9eff',
   },
   videoChipText: {
-    color: "#ccc",
+    color: '#ccc',
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: '600',
     marginBottom: 6,
   },
   videoChipTextActive: {
-    color: "#fff",
+    color: '#fff',
   },
   tagRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 3,
   },
   tag: {
-    backgroundColor: "#333",
+    backgroundColor: '#333',
     borderRadius: 4,
     paddingHorizontal: 5,
     paddingVertical: 2,
   },
   tagText: {
-    color: "#aaa",
+    color: '#aaa',
     fontSize: 9,
-    fontWeight: "600",
+    fontWeight: '600',
   },
   tagHDR: {
-    backgroundColor: "#3d2e00",
+    backgroundColor: '#3d2e00',
   },
   tagDV: {
-    backgroundColor: "#2e1a3d",
+    backgroundColor: '#2e1a3d',
   },
   tag4K: {
-    backgroundColor: "#002e1a",
+    backgroundColor: '#002e1a',
   },
   tagHEVC: {
-    backgroundColor: "#2e002e",
+    backgroundColor: '#2e002e',
   },
   tagHLS: {
-    backgroundColor: "#002e3d",
+    backgroundColor: '#002e3d',
   },
   tagDASH: {
-    backgroundColor: "#3d2e00",
+    backgroundColor: '#3d2e00',
   },
   tag60: {
-    backgroundColor: "#3d0000",
+    backgroundColor: '#3d0000',
   },
   // Now playing
   nowPlaying: {
     paddingHorizontal: 20,
     paddingVertical: 8,
-    backgroundColor: "#0d0d1a",
+    backgroundColor: '#0d0d1a',
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
+    borderBottomColor: '#222',
   },
   nowPlayingLabel: {
-    color: "#666",
+    color: '#666',
     fontSize: 10,
-    textTransform: "uppercase",
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   nowPlayingTitle: {
-    color: "#fff",
+    color: '#fff',
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: '600',
     marginTop: 2,
     marginBottom: 4,
   },
   // Player
   playerContainer: {
-    width: "100%",
+    width: '100%',
     aspectRatio: 16 / 9,
-    backgroundColor: "#000",
-    position: "relative",
+    backgroundColor: '#000',
+    position: 'relative',
   },
   player: {
     flex: 1,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFill,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.48)",
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.48)',
     paddingHorizontal: 24,
   },
   loadingCard: {
@@ -1015,74 +930,74 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 18,
     borderRadius: 16,
-    backgroundColor: "rgba(17,24,39,0.88)",
+    backgroundColor: 'rgba(17,24,39,0.88)',
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    alignItems: "center",
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
   },
   loadingTitle: {
-    color: "#fff",
+    color: '#fff',
     fontSize: 15,
-    fontWeight: "700",
+    fontWeight: '700',
     marginTop: 12,
-    textAlign: "center",
+    textAlign: 'center',
   },
   loadingSubtitle: {
-    color: "#b6bfd4",
+    color: '#b6bfd4',
     fontSize: 12,
     marginTop: 6,
-    textAlign: "center",
+    textAlign: 'center',
   },
   errorContainer: {
     marginHorizontal: 20,
     marginTop: 8,
     padding: 10,
-    backgroundColor: "#3a1a1a",
+    backgroundColor: '#3a1a1a',
     borderRadius: 8,
   },
   errorText: {
-    color: "#ff6b6b",
+    color: '#ff6b6b',
     fontSize: 13,
   },
   progressContainer: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 20,
     marginTop: 16,
     gap: 10,
   },
   timeText: {
-    color: "#aaa",
+    color: '#aaa',
     fontSize: 12,
-    fontVariant: ["tabular-nums"],
+    fontVariant: ['tabular-nums'],
     width: 55,
-    textAlign: "center",
+    textAlign: 'center',
   },
   progressBarBg: {
     flex: 1,
     height: 4,
-    backgroundColor: "#333",
+    backgroundColor: '#333',
     borderRadius: 2,
-    overflow: "hidden",
+    overflow: 'hidden',
   },
   progressBarFill: {
-    height: "100%",
-    backgroundColor: "#4a9eff",
+    height: '100%',
+    backgroundColor: '#4a9eff',
     borderRadius: 2,
   },
   progressBarBuffered: {
-    position: "absolute",
+    position: 'absolute',
     left: 0,
     top: 0,
-    height: "100%",
-    backgroundColor: "#555",
+    height: '100%',
+    backgroundColor: '#555',
     borderRadius: 2,
   },
   statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
     gap: 8,
     marginTop: 8,
     paddingHorizontal: 20,
@@ -1093,29 +1008,29 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   hdrBadge: {
-    backgroundColor: "#7c3aed",
+    backgroundColor: '#7c3aed',
   },
   stateBadgeText: {
-    color: "#fff",
+    color: '#fff',
     fontSize: 10,
-    fontWeight: "700",
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   statsText: {
-    color: "#aaa",
+    color: '#aaa',
     fontSize: 12,
-    fontVariant: ["tabular-nums"],
+    fontVariant: ['tabular-nums'],
   },
   infoText: {
-    color: "#666",
+    color: '#666',
     fontSize: 11,
-    textAlign: "center",
+    textAlign: 'center',
     marginTop: 6,
   },
   controls: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginTop: 20,
     gap: 20,
   },
@@ -1123,46 +1038,46 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#222",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: '#222',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   controlText: {
-    color: "#fff",
+    color: '#fff',
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: '600',
   },
   playBtn: {
     width: 70,
     height: 70,
     borderRadius: 35,
-    backgroundColor: "#4a9eff",
+    backgroundColor: '#4a9eff',
   },
   playBtnText: {
-    color: "#fff",
+    color: '#fff',
     fontSize: 24,
-    fontWeight: "700",
+    fontWeight: '700',
   },
   secondaryControls: {
-    flexDirection: "row",
-    justifyContent: "center",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
     marginTop: 16,
     gap: 10,
   },
   secondaryBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: "#222",
+    backgroundColor: '#222',
     borderRadius: 20,
   },
   secondaryBtnText: {
-    color: "#ccc",
+    color: '#ccc',
     fontSize: 13,
-    fontWeight: "500",
+    fontWeight: '500',
   },
   urlContainer: {
-    flexDirection: "row",
+    flexDirection: 'row',
     marginHorizontal: 20,
     marginTop: 16,
     gap: 10,
@@ -1170,30 +1085,30 @@ const styles = StyleSheet.create({
   urlInput: {
     flex: 1,
     height: 42,
-    backgroundColor: "#222",
+    backgroundColor: '#222',
     borderRadius: 8,
     paddingHorizontal: 12,
-    color: "#fff",
+    color: '#fff',
     fontSize: 13,
   },
   loadBtn: {
     height: 42,
     paddingHorizontal: 20,
-    backgroundColor: "#4a9eff",
+    backgroundColor: '#4a9eff',
     borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   loadBtnText: {
-    color: "#fff",
+    color: '#fff',
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: '600',
   },
   // Track info panel styles
   trackPanel: {
     marginHorizontal: 20,
     marginTop: 20,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: '#1a1a2e',
     borderRadius: 12,
     padding: 16,
   },
@@ -1201,7 +1116,7 @@ const styles = StyleSheet.create({
   mediaInfoPanel: {
     marginHorizontal: 20,
     marginTop: 20,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: '#1a1a2e',
     borderRadius: 12,
     padding: 16,
   },
@@ -1209,28 +1124,28 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   mediaInfoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#333",
+    borderBottomColor: '#333',
   },
   mediaInfoLabel: {
-    color: "#888",
+    color: '#888',
     fontSize: 12,
-    fontWeight: "500",
+    fontWeight: '500',
   },
   mediaInfoValueRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
   },
   mediaInfoValue: {
-    color: "#ddd",
+    color: '#ddd',
     fontSize: 12,
-    fontWeight: "600",
-    fontVariant: ["tabular-nums"],
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
   },
   hwdecDot: {
     width: 8,
@@ -1238,26 +1153,26 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   trackPanelTitle: {
-    color: "#fff",
+    color: '#fff',
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: '700',
     marginBottom: 12,
   },
   trackSection: {
     marginBottom: 14,
   },
   trackSectionTitle: {
-    color: "#8888cc",
+    color: '#8888cc',
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: '600',
     marginBottom: 6,
-    textTransform: "uppercase",
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   trackItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#222244",
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#222244',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -1265,45 +1180,45 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   trackItemSelected: {
-    backgroundColor: "#2a3a5e",
+    backgroundColor: '#2a3a5e',
     borderWidth: 1,
-    borderColor: "#4a9eff",
+    borderColor: '#4a9eff',
   },
   trackId: {
-    color: "#666",
+    color: '#666',
     fontSize: 11,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
     width: 28,
   },
   trackLabel: {
     flex: 1,
-    color: "#aaa",
+    color: '#aaa',
     fontSize: 12,
   },
   trackLabelSelected: {
-    color: "#fff",
+    color: '#fff',
   },
   trackBadge: {
-    color: "#4a9eff",
+    color: '#4a9eff',
     fontSize: 10,
-    fontWeight: "700",
-    backgroundColor: "#1a2a4e",
+    fontWeight: '700',
+    backgroundColor: '#1a2a4e',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
-    overflow: "hidden",
+    overflow: 'hidden',
   },
   noTracksText: {
-    color: "#666",
+    color: '#666',
     fontSize: 12,
-    fontStyle: "italic",
+    fontStyle: 'italic',
     paddingVertical: 8,
   },
   selectionText: {
-    color: "#aaa",
+    color: '#aaa',
     fontSize: 12,
-    fontVariant: ["tabular-nums"],
+    fontVariant: ['tabular-nums'],
     paddingVertical: 4,
   },
 });

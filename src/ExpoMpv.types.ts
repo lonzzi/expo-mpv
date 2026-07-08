@@ -1,5 +1,7 @@
 import type { StyleProp, ViewStyle } from 'react-native';
 
+type EmptyEventPayload = Record<string, never>;
+
 // MARK: - Event Payloads
 
 /**
@@ -68,7 +70,7 @@ export type BufferEvent = {
   isBuffering: boolean;
 };
 
-export type SeekEvent = {};
+export type SeekEvent = EmptyEventPayload;
 
 export type VolumeChangeEvent = {
   volume: number;
@@ -154,7 +156,7 @@ export type MediaInfo = {
 
 // MARK: - Module Events (non-view)
 
-export type ExpoMpvModuleEvents = {};
+export type ExpoMpvModuleEvents = Record<never, never>;
 
 // MARK: - View Props
 

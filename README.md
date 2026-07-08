@@ -87,9 +87,9 @@ If you use network streams on Android, make sure your app networking/security se
 ## Usage
 
 ```tsx
-import { ExpoMpvView } from "expo-mpv";
-import type { ExpoMpvViewRef } from "expo-mpv";
-import { useRef } from "react";
+import { ExpoMpvView } from 'expo-mpv';
+import type { ExpoMpvViewRef } from 'expo-mpv';
+import { useRef } from 'react';
 
 export default function Player() {
   const playerRef = useRef<ExpoMpvViewRef>(null);
@@ -98,15 +98,15 @@ export default function Player() {
     <ExpoMpvView
       ref={playerRef}
       source="https://example.com/video.mp4"
-      style={{ width: "100%", aspectRatio: 16 / 9 }}
+      style={{ width: '100%', aspectRatio: 16 / 9 }}
       onLoad={({ nativeEvent }) => {
-        console.log("Duration:", nativeEvent.duration);
+        console.log('Duration:', nativeEvent.duration);
       }}
       onProgress={({ nativeEvent }) => {
-        console.log("Position:", nativeEvent.position);
+        console.log('Position:', nativeEvent.position);
       }}
       onError={({ nativeEvent }) => {
-        console.error("Error:", nativeEvent.error);
+        console.error('Error:', nativeEvent.error);
       }}
     />
   );
@@ -126,11 +126,11 @@ playerRef.current?.setVolume(80); // 0-100
 playerRef.current?.setMuted(true);
 playerRef.current?.setSubtitleTrack(2);
 playerRef.current?.setAudioTrack(1);
-playerRef.current?.addSubtitle("https://example.com/subs.srt");
+playerRef.current?.addSubtitle('https://example.com/subs.srt');
 playerRef.current?.removeSubtitle(3);
 playerRef.current?.reloadSubtitles();
 playerRef.current?.setSubtitleDelay(-0.5); // seconds
-playerRef.current?.setPropertyString("cache", "yes");
+playerRef.current?.setPropertyString('cache', 'yes');
 
 const info = await playerRef.current?.getPlaybackInfo();
 const tracks = await playerRef.current?.getTrackList();
@@ -142,29 +142,29 @@ const media = await playerRef.current?.getMediaInfo();
 
 ### Props
 
-| Prop | Type | Description |
-|------|------|-------------|
-| `source` | `string` | Media URL or local file path |
-| `paused` | `boolean` | Pause/resume playback |
-| `speed` | `number` | Playback speed (default: 1.0) |
-| `volume` | `number` | Volume 0-100 (default: 100) |
-| `muted` | `boolean` | Mute audio |
-| `loop` | `boolean` | Loop current file |
-| `hwdec` | `string` | Hardware decode mode. Defaults to `videotoolbox` on iOS and `mediacodec` on Android |
+| Prop     | Type      | Description                                                                         |
+| -------- | --------- | ----------------------------------------------------------------------------------- |
+| `source` | `string`  | Media URL or local file path                                                        |
+| `paused` | `boolean` | Pause/resume playback                                                               |
+| `speed`  | `number`  | Playback speed (default: 1.0)                                                       |
+| `volume` | `number`  | Volume 0-100 (default: 100)                                                         |
+| `muted`  | `boolean` | Mute audio                                                                          |
+| `loop`   | `boolean` | Loop current file                                                                   |
+| `hwdec`  | `string`  | Hardware decode mode. Defaults to `videotoolbox` on iOS and `mediacodec` on Android |
 
 ### Events
 
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `onPlaybackStateChange` | `{ state, isPlaying }` | State machine: `state` is `idle \| loading \| playing \| paused \| buffering \| ended` |
-| `onProgress` | `{ position, duration, bufferedDuration, bufferedPosition, bufferRate, bufferingPercent }` | Periodic progress + buffering stats (buffered position for the seek bar, read rate in bytes/sec, cache fill %) |
-| `onLoad` | `{ duration, width, height }` | Media loaded and ready |
-| `onError` | `{ error }` | Error occurred |
-| `onEnd` | `{ reason }` | Playback ended |
-| `onBuffer` | `{ isBuffering }` | Buffering state changed |
-| `onSeek` | `{}` | Seek completed |
-| `onVolumeChange` | `{ volume, muted }` | Volume/mute changed |
-| `onHdrStateChange` | `{ isHdr, hdrActive, sigPeak, hdrFormat }` | HDR/Dolby Vision content detected / display support changed |
+| Event                   | Payload                                                                                    | Description                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `onPlaybackStateChange` | `{ state, isPlaying }`                                                                     | State machine: `state` is `idle \| loading \| playing \| paused \| buffering \| ended`                         |
+| `onProgress`            | `{ position, duration, bufferedDuration, bufferedPosition, bufferRate, bufferingPercent }` | Periodic progress + buffering stats (buffered position for the seek bar, read rate in bytes/sec, cache fill %) |
+| `onLoad`                | `{ duration, width, height }`                                                              | Media loaded and ready                                                                                         |
+| `onError`               | `{ error }`                                                                                | Error occurred                                                                                                 |
+| `onEnd`                 | `{ reason }`                                                                               | Playback ended                                                                                                 |
+| `onBuffer`              | `{ isBuffering }`                                                                          | Buffering state changed                                                                                        |
+| `onSeek`                | `{}`                                                                                       | Seek completed                                                                                                 |
+| `onVolumeChange`        | `{ volume, muted }`                                                                        | Volume/mute changed                                                                                            |
+| `onHdrStateChange`      | `{ isHdr, hdrActive, sigPeak, hdrFormat }`                                                 | HDR/Dolby Vision content detected / display support changed                                                    |
 
 ### Imperative API
 
@@ -202,6 +202,7 @@ This module bundles [Noto Sans CJK SC](https://github.com/notofonts/noto-cjk) (S
 Starting with iOS 18, Apple changed system fonts (PingFang, Heiti, etc.) to a proprietary HVGL variable font format. FreeType — the font rasterizer used by libass (mpv's subtitle renderer) — cannot parse HVGL fonts. This means system CJK fonts are invisible to libass, causing Chinese characters to render as empty boxes (tofu).
 
 This is a known issue across the ecosystem:
+
 - [libass/libass#912](https://github.com/libass/libass/issues/912) — FreeType HVGL support tracking
 - [mpv-player/mpv#14878](https://github.com/mpv-player/mpv/issues/14878) — PingFang broken on macOS 15
 - [iina/iina#5176](https://github.com/iina/iina/issues/5176) — IINA Chinese subtitle garbling

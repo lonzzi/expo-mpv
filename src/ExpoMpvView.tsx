@@ -85,7 +85,7 @@ function ExpoMpvView(props: ExpoMpvViewComponentProps) {
           colorspace: '',
         }),
     }),
-    [ref]
+    [ref],
   );
 
   return <NativeView ref={nativeRef} {...restProps} />;

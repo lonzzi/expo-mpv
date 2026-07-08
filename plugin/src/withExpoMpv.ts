@@ -1,8 +1,8 @@
-import { ConfigPlugin, withDangerousMod } from 'expo/config-plugins';
 import { execSync } from 'child_process';
-import path from 'path';
+import { ConfigPlugin, withDangerousMod } from 'expo/config-plugins';
 import fs from 'fs';
 import https from 'https';
+import path from 'path';
 
 const MPVKIT_VERSION = '0.41.0';
 
@@ -21,9 +21,15 @@ function getFrameworkSources(): FrameworkSource[] {
     // Core
     { name: 'Libmpv', url: `${mpvkit}/Libmpv.xcframework.zip` },
     // FFmpeg
-    ...['Libavcodec', 'Libavdevice', 'Libavformat', 'Libavfilter', 'Libavutil', 'Libswresample', 'Libswscale'].map(
-      (name) => ({ name, url: `${mpvkit}/${name}.xcframework.zip` })
-    ),
+    ...[
+      'Libavcodec',
+      'Libavdevice',
+      'Libavformat',
+      'Libavfilter',
+      'Libavutil',
+      'Libswresample',
+      'Libswscale',
+    ].map((name) => ({ name, url: `${mpvkit}/${name}.xcframework.zip` })),
     // OpenSSL
     { name: 'Libcrypto', url: `${openssl}/Libcrypto.xcframework.zip` },
     { name: 'Libssl', url: `${openssl}/Libssl.xcframework.zip` },
@@ -38,15 +44,42 @@ function getFrameworkSources(): FrameworkSource[] {
       url: `${libass}/${name}.xcframework.zip`,
     })),
     // Others
-    { name: 'MoltenVK', url: 'https://github.com/mpvkit/moltenvk-build/releases/download/1.4.1/MoltenVK.xcframework.zip' },
-    { name: 'Libshaderc_combined', url: 'https://github.com/mpvkit/libshaderc-build/releases/download/2025.5.0/Libshaderc_combined.xcframework.zip' },
-    { name: 'lcms2', url: 'https://github.com/mpvkit/lcms2-build/releases/download/2.17.0/lcms2.xcframework.zip' },
-    { name: 'Libplacebo', url: 'https://github.com/mpvkit/libplacebo-build/releases/download/7.351.0-2512/Libplacebo.xcframework.zip' },
-    { name: 'Libdav1d', url: 'https://github.com/mpvkit/libdav1d-build/releases/download/1.5.2-xcode/Libdav1d.xcframework.zip' },
-    { name: 'Libuchardet', url: 'https://github.com/mpvkit/libuchardet-build/releases/download/0.0.8-xcode/Libuchardet.xcframework.zip' },
-    { name: 'Libbluray', url: 'https://github.com/mpvkit/libbluray-build/releases/download/1.4.0/Libbluray.xcframework.zip' },
-    { name: 'Libdovi', url: 'https://github.com/mpvkit/libdovi-build/releases/download/3.3.2/Libdovi.xcframework.zip' },
-    { name: 'Libuavs3d', url: 'https://github.com/mpvkit/libuavs3d-build/releases/download/1.2.1-xcode/Libuavs3d.xcframework.zip' },
+    {
+      name: 'MoltenVK',
+      url: 'https://github.com/mpvkit/moltenvk-build/releases/download/1.4.1/MoltenVK.xcframework.zip',
+    },
+    {
+      name: 'Libshaderc_combined',
+      url: 'https://github.com/mpvkit/libshaderc-build/releases/download/2025.5.0/Libshaderc_combined.xcframework.zip',
+    },
+    {
+      name: 'lcms2',
+      url: 'https://github.com/mpvkit/lcms2-build/releases/download/2.17.0/lcms2.xcframework.zip',
+    },
+    {
+      name: 'Libplacebo',
+      url: 'https://github.com/mpvkit/libplacebo-build/releases/download/7.351.0-2512/Libplacebo.xcframework.zip',
+    },
+    {
+      name: 'Libdav1d',
+      url: 'https://github.com/mpvkit/libdav1d-build/releases/download/1.5.2-xcode/Libdav1d.xcframework.zip',
+    },
+    {
+      name: 'Libuchardet',
+      url: 'https://github.com/mpvkit/libuchardet-build/releases/download/0.0.8-xcode/Libuchardet.xcframework.zip',
+    },
+    {
+      name: 'Libbluray',
+      url: 'https://github.com/mpvkit/libbluray-build/releases/download/1.4.0/Libbluray.xcframework.zip',
+    },
+    {
+      name: 'Libdovi',
+      url: 'https://github.com/mpvkit/libdovi-build/releases/download/3.3.2/Libdovi.xcframework.zip',
+    },
+    {
+      name: 'Libuavs3d',
+      url: 'https://github.com/mpvkit/libuavs3d-build/releases/download/1.2.1-xcode/Libuavs3d.xcframework.zip',
+    },
   ];
 }
 
@@ -54,18 +87,23 @@ function download(url: string, dest: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
     const request = (url: string) => {
-      https.get(url, (res) => {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          request(res.headers.location!);
-          return;
-        }
-        if (res.statusCode !== 200) {
-          reject(new Error(`Failed to download ${url}: ${res.statusCode}`));
-          return;
-        }
-        res.pipe(file);
-        file.on('finish', () => { file.close(); resolve(); });
-      }).on('error', reject);
+      https
+        .get(url, (res) => {
+          if (res.statusCode === 301 || res.statusCode === 302) {
+            request(res.headers.location!);
+            return;
+          }
+          if (res.statusCode !== 200) {
+            reject(new Error(`Failed to download ${url}: ${res.statusCode}`));
+            return;
+          }
+          res.pipe(file);
+          file.on('finish', () => {
+            file.close();
+            resolve();
+          });
+        })
+        .on('error', reject);
     };
     request(url);
   });

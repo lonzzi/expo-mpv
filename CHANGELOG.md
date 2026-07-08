@@ -15,8 +15,9 @@
   - `bufferRate` — network read rate in bytes/sec (`demuxer-cache-state.raw-input-rate`).
   - `bufferingPercent` — cache fill 0–100 while stalled (`cache-buffering-state`).
 - **HDR / Dolby Vision detection.** libplacebo (vo=gpu-next) decodes and tone-maps
-  HDR & DV content. New `onHdrStateChange` event (`{ isHdr, hdrActive, sigPeak,
-  hdrFormat }`) and `getMediaInfo()` now includes `isHdr` / `hdrFormat`.
+  HDR & DV content. New `onHdrStateChange` event
+  (`{ isHdr, hdrActive, sigPeak, hdrFormat }`) and `getMediaInfo()` now includes
+  `isHdr` / `hdrFormat`.
   (Note: `target-colorspace-hint`/HDR passthrough is not forced on iOS — it can break
   hardware decode with vo=gpu-next.)
 - **External subtitles now show by default.** `addSubtitle` defaults its flag to
