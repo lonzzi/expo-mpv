@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import { ConfigPlugin, withDangerousMod } from 'expo/config-plugins';
 import fs from 'fs';
 import https from 'https';
@@ -151,6 +151,15 @@ const withExpoMpv: ConfigPlugin = (config) => {
       const packageDir = path.join(__dirname, '..', '..');
       const frameworksDir = path.join(packageDir, 'ios', 'Frameworks');
       await downloadMPVKit(frameworksDir);
+      // MPVKit 0.41.0 does not notify mpv when an embedded Metal surface resizes.
+      // Rebuild its small backend, preserving every other bundled archive member.
+      execFileSync(
+        'python3',
+        [path.join(packageDir, 'ios', 'fix-moltenvk-resize.py'), frameworksDir],
+        {
+          stdio: 'inherit',
+        },
+      );
       return config;
     },
   ]);

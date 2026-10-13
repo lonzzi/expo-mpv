@@ -17,6 +17,7 @@ module.exports = defineConfig([
       '*.config.cjs',
       '*.config.js',
       'app.plugin.js',
+      'plugin/build/*.js',
       'example/*.config.js',
       'example/scripts/*.cjs',
     ],

@@ -72,6 +72,8 @@ There is no separate Android setup script to run.
 
 - Minimum deployment target: iOS 16.4 (required by Expo SDK 57 / React Native 0.86)
 - The plugin downloads MPVKit dependencies into `node_modules/expo-mpv/ios/Frameworks`
+- After downloading, the plugin rebuilds MPVKit 0.41.0's small MoltenVK backend so rotation and view resizing update mpv's viewport as well as the Metal surface. It preserves the existing decoder, audio, tracks, and playback position.
+- This repair requires Python 3 and Xcode command-line tools. Its mpv and Vulkan header sources are checksum pinned and cached. Existing native projects can run `python3 node_modules/expo-mpv/ios/fix-moltenvk-resize.py node_modules/expo-mpv/ios/Frameworks` before rebuilding.
 - The first prebuild / native build can take a while because the media stack is large
 
 ### Android notes

@@ -56,14 +56,37 @@ class ExpoMpvView: ExpoView {
 
   // MARK: - Layout
 
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil { setNeedsLayout() }
+  }
+
   override func layoutSubviews() {
     super.layoutSubviews()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
     metalLayer.frame = bounds
     let scale = window?.screen.nativeScale ?? UIScreen.main.nativeScale
+    metalLayer.contentsScale = scale
     let w = bounds.width * scale
     let h = bounds.height * scale
-    if w > 1 && h > 1 {
-      metalLayer.drawableSize = CGSize(width: w, height: h)
+    let drawableSize = CGSize(width: w, height: h)
+    let surfaceChanged = w > 1 && h > 1 && metalLayer.drawableSize != drawableSize
+    if surfaceChanged {
+      metalLayer.drawableSize = drawableSize
+    }
+    CATransaction.commit()
+    if surfaceChanged {
+      // Wake the VO thread even while paused; it owns swapchain/viewport resize.
+      NotificationCenter.default.post(
+        name: Notification.Name("ExpoMpvMetalDrawableSizeDidChange"), object: metalLayer
+      )
+    }
+
+    // Do not open the source against the zero-sized surface created by init.
+    if window != nil, w > 1, h > 1, let source = pendingSource {
+      pendingSource = nil
+      loadFile(source)
     }
   }
 
@@ -467,8 +490,10 @@ class ExpoMpvView: ExpoView {
   // MARK: - Public API
 
   func loadFile(_ url: String) {
-    guard isInitialized, mpv != nil else {
-      log("loadFile deferred (not initialized yet): \(url)")
+    guard isInitialized, mpv != nil, window != nil,
+          bounds.width > 1, bounds.height > 1,
+          metalLayer.drawableSize.width > 1, metalLayer.drawableSize.height > 1 else {
+      log("loadFile deferred until the player surface is ready: \(url)")
       pendingSource = url
       return
     }
@@ -500,6 +525,7 @@ class ExpoMpvView: ExpoView {
   }
 
   func stop() {
+    pendingSource = nil
     commandAsync("stop")
     hasSource = false
     DispatchQueue.main.async { [weak self] in

@@ -1,10 +1,10 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
+const __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const config_plugins_1 = require("expo/config-plugins");
 const child_process_1 = require("child_process");
+const config_plugins_1 = require("expo/config-plugins");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const https_1 = __importDefault(require("https"));
@@ -100,6 +100,8 @@ const withExpoMpv = (config) => {
             const packageDir = path_1.default.join(__dirname, '..', '..');
             const frameworksDir = path_1.default.join(packageDir, 'ios', 'Frameworks');
             await downloadMPVKit(frameworksDir);
+            // Rebuild MPVKit 0.41.0's backend so embedded Metal surfaces can resize.
+            (0, child_process_1.execFileSync)('python3', [path_1.default.join(packageDir, 'ios', 'fix-moltenvk-resize.py'), frameworksDir], { stdio: 'inherit' });
             return config;
         },
     ]);
