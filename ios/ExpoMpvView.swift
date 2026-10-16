@@ -9,8 +9,28 @@ class ExpoMpvView: ExpoView {
 
   // MARK: - MPV
 
-  private var mpv: OpaquePointer?
+  private let mpvLock = NSLock()
+  private var mpvHandle: OpaquePointer?
+  private var mpv: OpaquePointer? {
+    get {
+      mpvLock.lock()
+      defer { mpvLock.unlock() }
+      return mpvHandle
+    }
+    set {
+      mpvLock.lock()
+      mpvHandle = newValue
+      mpvLock.unlock()
+    }
+  }
   private lazy var queue = DispatchQueue(label: "com.expo.mpv.event", qos: .userInitiated)
+  // Accessed on the main queue; replies from the mpv event queue are marshalled there.
+  private struct PendingCommand {
+    let name: String
+    let completion: (() -> Void)?
+  }
+  private var pendingCommands: [UInt64: PendingCommand] = [:]
+  private var nextCommandID: UInt64 = 1
 
   // MARK: - State
 
@@ -312,10 +332,15 @@ class ExpoMpvView: ExpoView {
 
   private func readEvents() {
     queue.async { [weak self] in
-      guard let self = self, self.mpv != nil else { return }
+      guard let self = self, let handle = self.mpv else { return }
+      // If this reader held the last reference during an unmount, release the
+      // UIKit view on its owning queue rather than on the mpv event queue.
+      defer { DispatchQueue.main.async { withExtendedLifetime(self) {} } }
 
-      while true {
-        let event = mpv_wait_event(self.mpv, 0)
+      // Destruction is enqueued on this same serial queue, so handle remains
+      // valid until this reader has finished, even if the view is detached.
+      while self.mpv == handle {
+        let event = mpv_wait_event(handle, 0)
         guard let event = event else { break }
 
         if event.pointee.event_id == MPV_EVENT_NONE {
@@ -324,7 +349,16 @@ class ExpoMpvView: ExpoView {
 
         switch event.pointee.event_id {
         case MPV_EVENT_PROPERTY_CHANGE:
-          self.handlePropertyChange(event)
+          self.handlePropertyChange(event, handle: handle)
+
+        case MPV_EVENT_COMMAND_REPLY:
+          let commandID = event.pointee.reply_userdata
+          let error = event.pointee.error
+          self.dispatchEvent(for: handle) {
+            guard let command = self.pendingCommands.removeValue(forKey: commandID) else { return }
+            self.reportCommandResult(command.name, result: error)
+            command.completion?()
+          }
 
         case MPV_EVENT_LOG_MESSAGE:
           if let data = event.pointee.data {
@@ -339,7 +373,7 @@ class ExpoMpvView: ExpoView {
 
         case MPV_EVENT_FILE_LOADED:
           self.log("EVENT: file-loaded")
-          DispatchQueue.main.async {
+          self.dispatchEvent(for: handle) {
             let duration = self.getDouble("duration")
             let width = self.getInt("video-params/w")
             let height = self.getInt("video-params/h")
@@ -361,7 +395,7 @@ class ExpoMpvView: ExpoView {
           if let data = event.pointee.data {
             let endFile = data.assumingMemoryBound(to: mpv_event_end_file.self).pointee
             self.log("EVENT: end-file reason=\(endFile.reason) error=\(endFile.error)")
-            DispatchQueue.main.async {
+            self.dispatchEvent(for: handle) {
               // NOTE: do NOT clear hasSource here. END_FILE also fires for the
               // previous file when switching via `loadfile replace` (reason=stop),
               // which would otherwise flip the state to "idle" right after the new
@@ -396,11 +430,11 @@ class ExpoMpvView: ExpoView {
 
         case MPV_EVENT_SHUTDOWN:
           self.log("EVENT: shutdown")
-          self.mpv = nil
+          self.dispatchEvent(for: handle) { self.destroy() }
           return
 
         case MPV_EVENT_SEEK:
-          DispatchQueue.main.async {
+          self.dispatchEvent(for: handle) {
             self.onSeek([:])
           }
 
@@ -414,7 +448,14 @@ class ExpoMpvView: ExpoView {
     }
   }
 
-  private func handlePropertyChange(_ event: UnsafePointer<mpv_event>) {
+  private func dispatchEvent(for handle: OpaquePointer, _ action: @escaping () -> Void) {
+    DispatchQueue.main.async { [weak self] in
+      guard self?.mpv == handle else { return }
+      action()
+    }
+  }
+
+  private func handlePropertyChange(_ event: UnsafePointer<mpv_event>, handle: OpaquePointer) {
     guard let data = event.pointee.data else { return }
     let prop = data.assumingMemoryBound(to: mpv_event_property.self).pointee
 
@@ -424,7 +465,7 @@ class ExpoMpvView: ExpoView {
     switch name {
     // These flags all feed the unified state machine; let computeState() decide.
     case "pause", "core-idle", "eof-reached":
-      DispatchQueue.main.async {
+      dispatchEvent(for: handle) {
         self.emitStateChange()
       }
 
@@ -433,7 +474,7 @@ class ExpoMpvView: ExpoView {
         guard prop.format == MPV_FORMAT_FLAG, let flagPtr = prop.data else { return false }
         return flagPtr.assumingMemoryBound(to: Int32.self).pointee != 0
       }()
-      DispatchQueue.main.async {
+      dispatchEvent(for: handle) {
         // Keep the dedicated buffering event for backwards compatibility, and
         // recompute the high-level state (buffering vs playing).
         self.onBuffer(["isBuffering": buffering])
@@ -443,7 +484,7 @@ class ExpoMpvView: ExpoView {
     case "volume":
       if prop.format == MPV_FORMAT_DOUBLE, let dataPtr = prop.data {
         let volume = dataPtr.assumingMemoryBound(to: Double.self).pointee
-        DispatchQueue.main.async {
+        dispatchEvent(for: handle) {
           self.onVolumeChange(["volume": volume, "muted": self.getFlag("mute")])
         }
       }
@@ -451,7 +492,7 @@ class ExpoMpvView: ExpoView {
     case "mute":
       if prop.format == MPV_FORMAT_FLAG, let flagPtr = prop.data {
         let muted = flagPtr.assumingMemoryBound(to: Int32.self).pointee != 0
-        DispatchQueue.main.async {
+        dispatchEvent(for: handle) {
           self.onVolumeChange(["volume": self.getDouble("volume"), "muted": muted])
         }
       }
@@ -461,7 +502,7 @@ class ExpoMpvView: ExpoView {
         guard prop.format == MPV_FORMAT_DOUBLE, let dataPtr = prop.data else { return 0 }
         return dataPtr.assumingMemoryBound(to: Double.self).pointee
       }()
-      DispatchQueue.main.async {
+      dispatchEvent(for: handle) {
         self.emitHdrStateChange(sigPeak: sigPeak)
       }
 
@@ -490,6 +531,7 @@ class ExpoMpvView: ExpoView {
   // MARK: - Public API
 
   func loadFile(_ url: String) {
+    cancelPendingCommands()
     guard isInitialized, mpv != nil, window != nil,
           bounds.width > 1, bounds.height > 1,
           metalLayer.drawableSize.width > 1, metalLayer.drawableSize.height > 1 else {
@@ -499,7 +541,7 @@ class ExpoMpvView: ExpoView {
     }
     log("loadFile: \(url)")
     hasSource = true
-    commandAsync("loadfile", args: [url, "replace"])
+    command("loadfile", args: [url, "replace"])
     // Enter "loading" immediately. We force it here (rather than via
     // computeState) because right after loadfile mpv may still report the
     // previous file's flags (e.g. eof-reached), which would misfire "ended".
@@ -526,7 +568,8 @@ class ExpoMpvView: ExpoView {
 
   func stop() {
     pendingSource = nil
-    commandAsync("stop")
+    cancelPendingCommands()
+    command("stop")
     hasSource = false
     DispatchQueue.main.async { [weak self] in
       self?.emitStateChange() // -> idle
@@ -534,11 +577,11 @@ class ExpoMpvView: ExpoView {
   }
 
   func seekTo(_ position: Double) {
-    commandAsync("seek", args: [String(position), "absolute"])
+    command("seek", args: [String(position), "absolute"])
   }
 
   func seekBy(_ offset: Double) {
-    commandAsync("seek", args: [String(offset), "relative"])
+    command("seek", args: [String(offset), "relative"])
   }
 
   func setSpeed(_ speed: Double) {
@@ -587,34 +630,32 @@ class ExpoMpvView: ExpoView {
   /// Load an external subtitle file (local path or URL).
   /// `flag` defaults to "select" (mpv's own default) so the subtitle is shown
   /// immediately. Pass "auto" to add without selecting (then use setSubtitleTrack).
-  func addSubtitle(_ path: String, flag: String = "select", title: String? = nil, lang: String? = nil) {
-    guard mpv != nil else { return }
+  func addSubtitle(_ path: String, flag: String = "select", title: String? = nil, lang: String? = nil, completion: (() -> Void)? = nil) {
     log("addSubtitle: \(path) flags=\(flag)")
-    commandAsync("sub-add", args: trackAddArgs(path, flag: flag, title: title, lang: lang))
+    commandAsync("sub-add", args: trackAddArgs(path, flag: flag, title: title, lang: lang), completion: completion)
   }
 
   /// Remove a subtitle track by id.
   func removeSubtitle(_ trackId: Int) {
-    commandAsync("sub-remove", args: [String(trackId)])
+    command("sub-remove", args: [String(trackId)])
   }
 
   /// Reload current subtitles (useful after font changes).
-  func reloadSubtitles() {
-    commandAsync("sub-reload")
+  func reloadSubtitles(completion: (() -> Void)? = nil) {
+    commandAsync("sub-reload", completion: completion)
   }
 
   /// Load an external audio file (local path or URL). `flag` defaults to
   /// "select" so it becomes the active audio track. Pass "auto" to add without
   /// selecting (then use setAudioTrack).
-  func addAudio(_ path: String, flag: String = "select", title: String? = nil, lang: String? = nil) {
-    guard mpv != nil else { return }
+  func addAudio(_ path: String, flag: String = "select", title: String? = nil, lang: String? = nil, completion: (() -> Void)? = nil) {
     log("addAudio: \(path) flags=\(flag)")
-    commandAsync("audio-add", args: trackAddArgs(path, flag: flag, title: title, lang: lang))
+    commandAsync("audio-add", args: trackAddArgs(path, flag: flag, title: title, lang: lang), completion: completion)
   }
 
   /// Remove an audio track by id.
   func removeAudio(_ trackId: Int) {
-    commandAsync("audio-remove", args: [String(trackId)])
+    command("audio-remove", args: [String(trackId)])
   }
 
   func setSubtitleDelay(_ seconds: Double) {
@@ -731,11 +772,17 @@ class ExpoMpvView: ExpoView {
 
   func destroy() {
     stopProgressTimer()
+    cancelPendingCommands()
     if let mpv = mpv {
       log("Destroying mpv...")
       mpv_set_wakeup_callback(mpv, nil, nil)
-      mpv_terminate_destroy(mpv)
       self.mpv = nil
+      // Shutdown may wait for network workers; serialize it after event readers.
+      // mpv's wid is an unretained layer pointer, so retain it through shutdown.
+      let surface = metalLayer
+      queue.async {
+        withExtendedLifetime(surface) { mpv_terminate_destroy(mpv) }
+      }
     }
   }
 
@@ -814,41 +861,60 @@ class ExpoMpvView: ExpoView {
 
   // MARK: - MPV Helpers
 
-  private func commandAsync(_ command: String, args: [String] = []) {
-    guard mpv != nil else {
-      log("commandAsync ignored (mpv is nil): \(command)")
+  private func withCommandArguments(
+    _ command: String, args: [String],
+    _ perform: (UnsafeMutablePointer<UnsafePointer<CChar>?>?) -> Int32
+  ) -> Int32 {
+    let strings = ([command] + args).map { strdup($0) }
+    defer { strings.forEach { free($0) } }
+    var pointers = strings.map { UnsafePointer($0) } + [nil]
+    return pointers.withUnsafeMutableBufferPointer { perform($0.baseAddress) }
+  }
+
+  // These commands only schedule playback changes. Keep their ordering with
+  // subsequent property writes (pause, track selection, etc.) synchronous.
+  private func command(_ command: String, args: [String] = []) {
+    guard let mpv = mpv else { return }
+    let result = withCommandArguments(command, args: args) { mpv_command(mpv, $0) }
+    reportCommandResult(command, result: result)
+  }
+
+  // External track commands can wait on HTTP/TLS for seconds. Queue the command
+  // in libmpv and report its actual result via MPV_EVENT_COMMAND_REPLY instead.
+  private func commandAsync(_ command: String, args: [String] = [], completion: (() -> Void)? = nil) {
+    guard let mpv = mpv else {
+      completion?()
       return
     }
-
-    // Build null-terminated args string for mpv_command_string is simplest,
-    // but mpv_command_string doesn't exist. Use mpv_command with proper memory management.
-    let allArgs = [command] + args
-    // Create C strings that live long enough
-    var cStrings = allArgs.map { strdup($0) }
-    cStrings.append(nil) // null-terminate
-
-    // Create array of const pointers
-    let result = cStrings.withUnsafeMutableBufferPointer { buffer -> Int32 in
-      // Build an array of UnsafePointer<CChar>? from UnsafeMutablePointer<CChar>?
-      var constPtrs = buffer.map { UnsafePointer($0) }
-      return constPtrs.withUnsafeMutableBufferPointer { constBuffer in
-        mpv_command(mpv, constBuffer.baseAddress)
-      }
+    let commandID = nextCommandID
+    nextCommandID += 1
+    pendingCommands[commandID] = PendingCommand(name: command, completion: completion)
+    let result = withCommandArguments(command, args: args) { mpv_command_async(mpv, commandID, $0) }
+    if result < 0 {
+      pendingCommands.removeValue(forKey: commandID)
+      reportCommandResult(command, result: result)
+      completion?()
     }
+  }
 
-    // Free strdup'd strings
-    for ptr in cStrings {
-      if let ptr = ptr { free(ptr) }
+  private func cancelPendingCommands() {
+    let commands = pendingCommands
+    pendingCommands.removeAll()
+    if let mpv = mpv {
+      for commandID in commands.keys { mpv_abort_async_command(mpv, commandID) }
     }
+    // Settle callers on cancellation too; an obsolete reply must not resolve
+    // twice or leave an awaiting JS caller pending after the view goes away.
+    for command in commands.values { command.completion?() }
+  }
 
+  private func reportCommandResult(_ command: String, result: Int32) {
     if result < 0 {
       let errStr = String(cString: mpv_error_string(result))
-      log("ERROR: command '\(command) \(args.joined(separator: " "))' failed: \(errStr) (\(result))")
-      DispatchQueue.main.async {
-        self.onError(["error": "Command '\(command)' failed: \(errStr)"])
-      }
+      log("ERROR: command '\(command)' failed: \(errStr) (\(result))")
+      onError(["error": "Command '\(command)' failed: \(errStr)"])
     } else {
-      log("Command OK: \(command) \(args.joined(separator: " "))")
+      log("Command OK: \(command)")
     }
   }
 

@@ -104,20 +104,20 @@ public class ExpoMpvModule: Module {
         view.setAudioTrack(trackId)
       }.runOnQueue(.main)
 
-      AsyncFunction("addSubtitle") { (view: ExpoMpvView, path: String, flag: String?, title: String?, lang: String?) in
-        view.addSubtitle(path, flag: flag ?? "select", title: title, lang: lang)
+      AsyncFunction("addSubtitle") { (view: ExpoMpvView, path: String, flag: String?, title: String?, lang: String?, promise: Promise) in
+        view.addSubtitle(path, flag: flag ?? "select", title: title, lang: lang) { promise.resolve() }
       }.runOnQueue(.main)
 
       AsyncFunction("removeSubtitle") { (view: ExpoMpvView, trackId: Int) in
         view.removeSubtitle(trackId)
       }.runOnQueue(.main)
 
-      AsyncFunction("reloadSubtitles") { (view: ExpoMpvView) in
-        view.reloadSubtitles()
+      AsyncFunction("reloadSubtitles") { (view: ExpoMpvView, promise: Promise) in
+        view.reloadSubtitles { promise.resolve() }
       }.runOnQueue(.main)
 
-      AsyncFunction("addAudio") { (view: ExpoMpvView, path: String, flag: String?, title: String?, lang: String?) in
-        view.addAudio(path, flag: flag ?? "select", title: title, lang: lang)
+      AsyncFunction("addAudio") { (view: ExpoMpvView, path: String, flag: String?, title: String?, lang: String?, promise: Promise) in
+        view.addAudio(path, flag: flag ?? "select", title: title, lang: lang) { promise.resolve() }
       }.runOnQueue(.main)
 
       AsyncFunction("removeAudio") { (view: ExpoMpvView, trackId: Int) in
