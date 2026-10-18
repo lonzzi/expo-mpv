@@ -117,6 +117,8 @@ class ProbeController: UIViewController {
       player.reloadSubtitles(completion: completion)
     } else if mode == "error" {
       player.addSubtitle(url("missing.srt"), title: "Missing subtitle", completion: completion)
+    } else if mode == "pgs" {
+      player.addSubtitle(url("slow.sup"), flag: "auto", title: "PGS subtitle", completion: completion)
     } else {
       player.addSubtitle(url("slow.srt"), flag: "auto", title: "Slow subtitle", completion: completion)
     }
@@ -164,7 +166,7 @@ class ProbeController: UIViewController {
         self.record("replace-return")
       }
     }
-    if ["subtitle", "audio", "reload", "error"].contains(mode) {
+    if ["subtitle", "pgs", "audio", "reload", "error"].contains(mode) {
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
         self.record("resume-handler")
         self.player.play()

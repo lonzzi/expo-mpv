@@ -9,6 +9,8 @@ on:
     branches: [main]
     paths:
       - 'ios/**'
+      - 'cpp/**'
+      - 'ExpoMpv.podspec'
       - 'src/**'
       - 'plugin/**'
       - 'example/**'
@@ -16,6 +18,8 @@ on:
   pull_request:
     paths:
       - 'ios/**'
+      - 'cpp/**'
+      - 'ExpoMpv.podspec'
       - 'src/**'
       - 'plugin/**'
       - 'example/**'

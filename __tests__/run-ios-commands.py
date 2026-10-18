@@ -25,8 +25,17 @@ import wave
 
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = 'expo.modules.mpv.command-regression'
-SCENARIOS = ['subtitle', 'audio', 'reload', 'replace', 'back', 'destroy', 'error']
+SCENARIOS = ['subtitle', 'pgs', 'audio', 'reload', 'replace', 'back', 'destroy', 'error']
 SUBTITLE = b'1\n00:00:00,000 --> 00:00:19,000\nExternal subtitle loaded\n'
+
+
+def pgs_subtitle():
+    """Generate empty PGS display sets with an original, nonzero timeline."""
+    def packet(pts, kind, payload):
+        return b'PG' + struct.pack('>IIBH', pts, 0, kind, len(payload)) + payload
+    return b''.join(packet(second * 90000, 0x16,
+                          struct.pack('>HHBHBBBB', 1920, 1080, 0x10, second, 0x80, 0, 0, 0)) +
+                    packet(second * 90000, 0x80, b'') for second in range(1, 20))
 
 
 def command(*args, **kwargs):
@@ -112,9 +121,10 @@ def serve():
             with lock:
                 counts[self.path] = counts.get(self.path, 0) + 1
                 count = counts[self.path]
-            if path == '/slow.srt' or path == '/slow.wav' and count == 1 or path == '/reload.srt' and count > 1:
+            if path in ['/slow.srt', '/slow.sup'] or path == '/slow.wav' and count == 1 or path == '/reload.srt' and count > 1:
                 time.sleep(4)
-            body = audio.getvalue() if path.endswith('.wav') else SUBTITLE
+            body = (audio.getvalue() if path.endswith('.wav') else
+                    pgs_subtitle() if path.endswith('.sup') else SUBTITLE)
             start, end = 0, len(body) - 1
             ranged = self.headers.get('Range', '').startswith('bytes=')
             if ranged:
@@ -150,7 +160,7 @@ def validate(data):
     errors = [entry for entry in data['events'] if entry['event'] == 'error']
     mode = data['scenario']
     completion = events['load-completion']['elapsed']
-    if mode in ['subtitle', 'audio', 'reload']:
+    if mode in ['subtitle', 'pgs', 'audio', 'reload']:
         assert 3.9 <= completion < 5.5, 'Awaiters must wait for the real command result'
     else:
         assert completion < 1.1, 'Cancellation or failure left an awaiting caller pending'
@@ -177,6 +187,8 @@ def validate(data):
         if mode != 'error':
             assert len(external) == 1, external
             assert external[0]['type'] == ('audio' if mode == 'audio' else 'sub')
+            if mode == 'pgs':
+                assert external[0]['codec'] == 'hdmv_pgs_subtitle', external
             assert data['selectedExternalID'] == external[0]['id']
             assert not any(track['isExternal'] for track in data['tracksAfterRemoval'])
             if mode != 'audio':

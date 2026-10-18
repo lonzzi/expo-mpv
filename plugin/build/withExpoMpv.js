@@ -5,9 +5,9 @@ const __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const child_process_1 = require("child_process");
 const config_plugins_1 = require("expo/config-plugins");
-const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const https_1 = __importDefault(require("https"));
+const path_1 = __importDefault(require("path"));
 const MPVKIT_VERSION = '0.41.0';
 function getFrameworkSources() {
     const mpvkit = `https://github.com/mpvkit/MPVKit/releases/download/${MPVKIT_VERSION}`;
@@ -18,7 +18,15 @@ function getFrameworkSources() {
         // Core
         { name: 'Libmpv', url: `${mpvkit}/Libmpv.xcframework.zip` },
         // FFmpeg
-        ...['Libavcodec', 'Libavdevice', 'Libavformat', 'Libavfilter', 'Libavutil', 'Libswresample', 'Libswscale'].map((name) => ({ name, url: `${mpvkit}/${name}.xcframework.zip` })),
+        ...[
+            'Libavcodec',
+            'Libavdevice',
+            'Libavformat',
+            'Libavfilter',
+            'Libavutil',
+            'Libswresample',
+            'Libswscale',
+        ].map((name) => ({ name, url: `${mpvkit}/${name}.xcframework.zip` })),
         // OpenSSL
         { name: 'Libcrypto', url: `${openssl}/Libcrypto.xcframework.zip` },
         { name: 'Libssl', url: `${openssl}/Libssl.xcframework.zip` },
@@ -33,22 +41,50 @@ function getFrameworkSources() {
             url: `${libass}/${name}.xcframework.zip`,
         })),
         // Others
-        { name: 'MoltenVK', url: 'https://github.com/mpvkit/moltenvk-build/releases/download/1.4.1/MoltenVK.xcframework.zip' },
-        { name: 'Libshaderc_combined', url: 'https://github.com/mpvkit/libshaderc-build/releases/download/2025.5.0/Libshaderc_combined.xcframework.zip' },
-        { name: 'lcms2', url: 'https://github.com/mpvkit/lcms2-build/releases/download/2.17.0/lcms2.xcframework.zip' },
-        { name: 'Libplacebo', url: 'https://github.com/mpvkit/libplacebo-build/releases/download/7.351.0-2512/Libplacebo.xcframework.zip' },
-        { name: 'Libdav1d', url: 'https://github.com/mpvkit/libdav1d-build/releases/download/1.5.2-xcode/Libdav1d.xcframework.zip' },
-        { name: 'Libuchardet', url: 'https://github.com/mpvkit/libuchardet-build/releases/download/0.0.8-xcode/Libuchardet.xcframework.zip' },
-        { name: 'Libbluray', url: 'https://github.com/mpvkit/libbluray-build/releases/download/1.4.0/Libbluray.xcframework.zip' },
-        { name: 'Libdovi', url: 'https://github.com/mpvkit/libdovi-build/releases/download/3.3.2/Libdovi.xcframework.zip' },
-        { name: 'Libuavs3d', url: 'https://github.com/mpvkit/libuavs3d-build/releases/download/1.2.1-xcode/Libuavs3d.xcframework.zip' },
+        {
+            name: 'MoltenVK',
+            url: 'https://github.com/mpvkit/moltenvk-build/releases/download/1.4.1/MoltenVK.xcframework.zip',
+        },
+        {
+            name: 'Libshaderc_combined',
+            url: 'https://github.com/mpvkit/libshaderc-build/releases/download/2025.5.0/Libshaderc_combined.xcframework.zip',
+        },
+        {
+            name: 'lcms2',
+            url: 'https://github.com/mpvkit/lcms2-build/releases/download/2.17.0/lcms2.xcframework.zip',
+        },
+        {
+            name: 'Libplacebo',
+            url: 'https://github.com/mpvkit/libplacebo-build/releases/download/7.351.0-2512/Libplacebo.xcframework.zip',
+        },
+        {
+            name: 'Libdav1d',
+            url: 'https://github.com/mpvkit/libdav1d-build/releases/download/1.5.2-xcode/Libdav1d.xcframework.zip',
+        },
+        {
+            name: 'Libuchardet',
+            url: 'https://github.com/mpvkit/libuchardet-build/releases/download/0.0.8-xcode/Libuchardet.xcframework.zip',
+        },
+        {
+            name: 'Libbluray',
+            url: 'https://github.com/mpvkit/libbluray-build/releases/download/1.4.0/Libbluray.xcframework.zip',
+        },
+        {
+            name: 'Libdovi',
+            url: 'https://github.com/mpvkit/libdovi-build/releases/download/3.3.2/Libdovi.xcframework.zip',
+        },
+        {
+            name: 'Libuavs3d',
+            url: 'https://github.com/mpvkit/libuavs3d-build/releases/download/1.2.1-xcode/Libuavs3d.xcframework.zip',
+        },
     ];
 }
 function download(url, dest) {
     return new Promise((resolve, reject) => {
         const file = fs_1.default.createWriteStream(dest);
         const request = (url) => {
-            https_1.default.get(url, (res) => {
+            https_1.default
+                .get(url, (res) => {
                 if (res.statusCode === 301 || res.statusCode === 302) {
                     request(res.headers.location);
                     return;
@@ -58,8 +94,12 @@ function download(url, dest) {
                     return;
                 }
                 res.pipe(file);
-                file.on('finish', () => { file.close(); resolve(); });
-            }).on('error', reject);
+                file.on('finish', () => {
+                    file.close();
+                    resolve();
+                });
+            })
+                .on('error', reject);
         };
         request(url);
     });
@@ -100,8 +140,12 @@ const withExpoMpv = (config) => {
             const packageDir = path_1.default.join(__dirname, '..', '..');
             const frameworksDir = path_1.default.join(packageDir, 'ios', 'Frameworks');
             await downloadMPVKit(frameworksDir);
-            // Rebuild MPVKit 0.41.0's backend so embedded Metal surfaces can resize.
-            (0, child_process_1.execFileSync)('python3', [path_1.default.join(packageDir, 'ios', 'fix-moltenvk-resize.py'), frameworksDir], { stdio: 'inherit' });
+            // MPVKit 0.41.0 does not notify mpv when an embedded Metal surface resizes.
+            // Rebuild its small backend, preserving every other bundled archive member.
+            (0, child_process_1.execFileSync)('python3', [path_1.default.join(packageDir, 'ios', 'fix-moltenvk-resize.py'), frameworksDir], {
+                stdio: 'inherit',
+            });
+            (0, child_process_1.execFileSync)('python3', [path_1.default.join(packageDir, 'ios', 'enable-sup-demuxer.py'), frameworksDir], { stdio: 'inherit' });
             return config;
         },
     ]);

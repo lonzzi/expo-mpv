@@ -1,0 +1,12 @@
+{
+  "woff2": {
+    "version": "1.0.2",
+    "source": "https://github.com/google/woff2",
+    "commit": "1bccf208bca986e53a647dfe4811322adb06ecf8"
+  },
+  "brotli": {
+    "version": "1.1.0",
+    "source": "https://github.com/google/brotli",
+    "commit": "ed738e842d2fbdf2d6459e39267a633c4a9b2f5d"
+  }
+}

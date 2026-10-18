@@ -7,6 +7,14 @@ class ExpoMpvModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("ExpoMpv")
 
+        AsyncFunction("fontFamilies") { input: String ->
+            ExpoMpvFontDecoder.fontFamilies(input)
+        }
+
+        AsyncFunction("decodeWoff2") { input: String, output: String ->
+            ExpoMpvFontDecoder.decodeWoff2(input, output)
+        }
+
         View(ExpoMpvView::class) {
             // Events (same as iOS)
             Events(

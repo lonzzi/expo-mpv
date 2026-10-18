@@ -73,6 +73,7 @@ There is no separate Android setup script to run.
 - Minimum deployment target: iOS 16.4 (required by Expo SDK 57 / React Native 0.86)
 - The plugin downloads MPVKit dependencies into `node_modules/expo-mpv/ios/Frameworks`
 - After downloading, the plugin rebuilds MPVKit 0.41.0's small MoltenVK backend so rotation and view resizing update mpv's viewport as well as the Metal surface. It preserves the existing decoder, audio, tracks, and playback position.
+- The plugin also enables the standalone SUP demuxer in iOS FFmpeg archives. It merges PGS segments into complete subtitle frames through FFmpeg's `pgs_frame_merge` filter, retaining the original bitmap data and timestamps for playback and seeking.
 - This repair requires Python 3 and Xcode command-line tools. Its mpv and Vulkan header sources are checksum pinned and cached. Existing native projects can run `python3 node_modules/expo-mpv/ios/fix-moltenvk-resize.py node_modules/expo-mpv/ios/Frameworks` before rebuilding.
 - The first prebuild / native build can take a while because the media stack is large
 
@@ -194,6 +195,14 @@ const media = await playerRef.current?.getMediaInfo();
 - `getTrackList()`
 - `getCurrentTrackIds()`
 - `getMediaInfo()` — returns codec, resolution, fps, bitrate, hwdec status, pixel format, colorspace
+
+## Font utilities
+
+`decodeWoff2(inputFileUri, outputFileUri)` converts WOFF2 to OpenType/TrueType;
+`fontFamilies(fileUri)` reads family names from TTF, OTF, TTC, and WOFF files.
+Both run off the UI thread and accept local `file://` URIs. Input and decoded fonts
+are limited to 32 MiB. Applications own downloading, caching, and font selection.
+Bitmap subtitles such as PGS retain their original appearance when fonts change.
 
 ## CJK Subtitle Rendering
 

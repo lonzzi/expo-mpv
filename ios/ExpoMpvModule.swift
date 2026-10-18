@@ -4,6 +4,22 @@ public class ExpoMpvModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ExpoMpv")
 
+    AsyncFunction("fontFamilies") { (input: URL) in
+      guard input.isFileURL else {
+        throw NSError(domain: "ExpoMpvFonts", code: 2,
+                      userInfo: [NSLocalizedDescriptionKey: "Font paths must be local files"])
+      }
+      return try ExpoMpvFontDecoder.fontFamilies(input.path)
+    }.runOnQueue(.global(qos: .utility))
+
+    AsyncFunction("decodeWoff2") { (input: URL, output: URL) in
+      guard input.isFileURL, output.isFileURL else {
+        throw NSError(domain: "ExpoMpvFonts", code: 2,
+                      userInfo: [NSLocalizedDescriptionKey: "Font paths must be local files"])
+      }
+      try ExpoMpvFontDecoder.decodeInput(input.path, output: output.path)
+    }.runOnQueue(.global(qos: .utility))
+
     // MARK: - View
 
     View(ExpoMpvView.self) {

@@ -160,6 +160,11 @@ const withExpoMpv: ConfigPlugin = (config) => {
           stdio: 'inherit',
         },
       );
+      execFileSync(
+        'python3',
+        [path.join(packageDir, 'ios', 'enable-sup-demuxer.py'), frameworksDir],
+        { stdio: 'inherit' },
+      );
       return config;
     },
   ]);

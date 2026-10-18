@@ -1,6 +1,6 @@
 {
   "name": "expo-mpv",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Expo module wrapping libmpv for video playback on iOS and Android",
   "main": "build/index.js",
   "types": "build/index.d.ts",
@@ -15,12 +15,14 @@
     "typecheck:src": "tsc --noEmit --project tsconfig.json",
     "test": "expo-module test -- --passWithNoTests",
     "prepare": "expo-module prepare && husky",
-    "prepublishOnly": "expo-module prepublishOnly && bun run typecheck:plugin",
+    "prepublishOnly": "expo-module prepublishOnly && expo-module build plugin && bun run typecheck:plugin",
     "expo-module": "expo-module",
     "open:ios": "xed example/ios",
     "open:android": "open -a \"Android Studio\" example/android",
     "test:ios-resize": "python3 __tests__/run-moltenvk-resize.py",
-    "test:ios-commands": "python3 __tests__/run-ios-commands.py"
+    "test:ios-commands": "python3 __tests__/run-ios-commands.py",
+    "test:native:fonts": "bash __tests__/fonts/run-native-tests.sh",
+    "test:ios-sup": "python3 __tests__/run-ios-sup-packets.py"
   },
   "keywords": [
     "react-native",

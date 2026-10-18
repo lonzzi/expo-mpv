@@ -55,13 +55,15 @@ example/vendor/
 
 # node.js
 #
-node_modules/
+node_modules
 npm-debug.log
 yarn-debug.log
 yarn-error.log
 
 # Plugin build output
-plugin/build/
+plugin/build/*
+!plugin/build/withExpoMpv.js
+!plugin/build/withExpoMpv.d.ts
 
 # Expo
 .expo/*
