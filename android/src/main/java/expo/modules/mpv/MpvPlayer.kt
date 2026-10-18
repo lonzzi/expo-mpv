@@ -362,6 +362,13 @@ internal class MpvPlayer(
 
     fun onPropertyChange(name: String, value: Any?) {
         when (name) {
+            "current-tracks/sub/codec" -> runOnPlayerThread {
+                // Composite overlapping ASS drawings before GPU upload rather
+                // than packing thousands of them into an oversized atlas.
+                val codec = getPropertyStringLocked(name)?.lowercase()
+                val mode = if (codec == "ass" || codec == "ssa") "yes" else "no"
+                setPropertyStringLocked("force-rgba-osd-rendering", mode)
+            }
             "time-pos" -> cachedTimePos = (value as? Double) ?: 0.0
             "duration" -> cachedDuration = (value as? Double) ?: 0.0
             "demuxer-cache-duration" -> cachedCacheDuration = (value as? Double) ?: 0.0
@@ -518,6 +525,7 @@ internal class MpvPlayer(
         MPVLib.nativeObserveProperty(ptr, "demuxer-cache-duration", MPVLib.FORMAT_DOUBLE)
         MPVLib.nativeObserveProperty(ptr, "video-params/w", MPVLib.FORMAT_INT64)
         MPVLib.nativeObserveProperty(ptr, "video-params/h", MPVLib.FORMAT_INT64)
+        MPVLib.nativeObserveProperty(ptr, "current-tracks/sub/codec", MPVLib.FORMAT_STRING)
     }
 
     private fun maybeLoadPendingSourceLocked() {

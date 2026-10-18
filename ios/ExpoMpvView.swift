@@ -208,6 +208,7 @@ class ExpoMpvView: ExpoView {
     mpv_observe_property(mpv, 10, "video-params/h", MPV_FORMAT_INT64)
     mpv_observe_property(mpv, 11, "core-idle", MPV_FORMAT_FLAG)
     mpv_observe_property(mpv, 12, "video-params/sig-peak", MPV_FORMAT_DOUBLE)
+    mpv_observe_property(mpv, 13, "current-tracks/sub/codec", MPV_FORMAT_STRING)
 
     // Set wakeup callback for the event loop
     let rawSelf = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
@@ -463,6 +464,13 @@ class ExpoMpvView: ExpoView {
     let name = String(cString: cName)
 
     switch name {
+    case "current-tracks/sub/codec":
+      // Thousands of overlapping ASS drawings can overflow the GPU bitmap atlas.
+      // Composite them before upload, preserving window resolution and margins.
+      let codec = getString(name)?.lowercased() ?? ""
+      let mode = codec == "ass" || codec == "ssa" ? "yes" : "no"
+      setPropertyString("force-rgba-osd-rendering", mode)
+
     // These flags all feed the unified state machine; let computeState() decide.
     case "pause", "core-idle", "eof-reached":
       dispatchEvent(for: handle) {

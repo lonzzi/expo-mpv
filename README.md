@@ -68,6 +68,11 @@ npx expo prebuild
 
 There is no separate Android setup script to run.
 
+ASS/SSA subtitles are composited into RGBA bitmaps before GPU upload so complex
+vector effects fit on high-resolution displays. Other subtitle formats keep
+their default rendering, and subtitle resolution, positioning, and margins are
+preserved.
+
 ### iOS notes
 
 - Minimum deployment target: iOS 16.4 (required by Expo SDK 57 / React Native 0.86)
