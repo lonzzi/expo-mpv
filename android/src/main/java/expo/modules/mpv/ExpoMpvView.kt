@@ -18,6 +18,9 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
     private val onSeek by EventDispatcher()
     private val onVolumeChange by EventDispatcher()
 
+    // SurfaceView is a native child; React Native only lays out this outer host.
+    override val shouldUseAndroidLayout = true
+
     private var isDestroyed = false
 
     private val surfaceView = SurfaceView(context).apply {
@@ -88,7 +91,13 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
             player.setSurface(holder.surface)
         }
 
-        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+            if (width > 0 && height > 0) {
+                // Use physical Surface pixels, not dp or the decoded video's dimensions.
+                // libmpv needs this to keep its viewport and EGL buffers in sync.
+                player.setPropertyString("android-surface-size", "${width}x$height")
+            }
+        }
 
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             player.setSurface(null)
@@ -181,6 +190,10 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
 
     fun addSubtitle(path: String, flag: String, title: String?, lang: String?) {
         player.addSubtitle(path, flag, title, lang)
+    }
+
+    fun addAudio(path: String, flag: String, title: String?, lang: String?) {
+        player.addAudio(path, flag, title, lang)
     }
 
     fun removeSubtitle(trackId: Int) {

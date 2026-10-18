@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.16
+
+### Android
+
+- Lay out the native video surface with its host and update mpv's surface size
+  when the view resizes, keeping the viewport and video aspect ratio correct.
+- Implement the existing `addAudio` ref method on Android so external audio
+  tracks can be loaded with their title and language.
+
 ## 0.1.11
 
 ### iOS

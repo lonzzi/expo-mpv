@@ -110,6 +110,10 @@ class ExpoMpvModule : Module() {
                 view.addSubtitle(path, flag ?: "auto", title, lang)
             }
 
+            AsyncFunction("addAudio") { view: ExpoMpvView, path: String, flag: String?, title: String?, lang: String? ->
+                view.addAudio(path, flag ?: "auto", title, lang)
+            }
+
             AsyncFunction("removeSubtitle") { view: ExpoMpvView, trackId: Int ->
                 view.removeSubtitle(trackId)
             }

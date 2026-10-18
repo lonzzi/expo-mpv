@@ -184,6 +184,14 @@ internal class MpvPlayer(
     }
 
     fun addSubtitle(path: String, flag: String, title: String?, lang: String?) {
+        addExternalTrack("sub-add", path, flag, title, lang)
+    }
+
+    fun addAudio(path: String, flag: String, title: String?, lang: String?) {
+        addExternalTrack("audio-add", path, flag, title, lang)
+    }
+
+    private fun addExternalTrack(command: String, path: String, flag: String, title: String?, lang: String?) {
         runOnPlayerThread {
             val args = mutableListOf(path, flag)
             if (title != null) {
@@ -194,7 +202,7 @@ internal class MpvPlayer(
             if (lang != null) {
                 args.add(lang)
             }
-            commandArrayLocked("sub-add", args)
+            commandArrayLocked(command, args)
         }
     }
 
