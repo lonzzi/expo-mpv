@@ -57,9 +57,6 @@ def build(work):
             check=True, env=env, stdout=log, stderr=log)
         args = base + ['-module-name', 'CommandRegression', '-I', str(work),
                       str(sources / 'App.swift'), str(ROOT / 'ios/ExpoMpvView.swift')]
-        pip = ROOT / 'ios/ExpoMpvPictureInPictureController.swift'
-        if pip.exists():
-            args.append(str(pip))
         args.append(str(work / 'libExpoModulesCore.a'))
         for framework in (ROOT / 'ios/Frameworks').glob('*.xcframework'):
             info = plistlib.loads((framework / 'Info.plist').read_bytes())
@@ -74,7 +71,7 @@ def build(work):
                 args += ['-F', str(directory), '-framework', framework.stem]
             else:
                 args.append(str(directory / lib['LibraryPath']))
-        for name in ['UIKit', 'Foundation', 'Metal', 'AVFoundation', 'AVKit', 'CoreAudio',
+        for name in ['UIKit', 'Foundation', 'Metal', 'AVFoundation', 'CoreAudio',
                      'AudioToolbox', 'CoreVideo', 'CoreMedia', 'VideoToolbox', 'QuartzCore',
                      'CoreFoundation', 'IOSurface', 'CoreGraphics', 'CoreText', 'Security',
                      'SystemConfiguration', 'Accelerate']:
