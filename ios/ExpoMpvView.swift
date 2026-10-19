@@ -178,6 +178,10 @@ class ExpoMpvView: ExpoView {
     // We use CoreText to find a CJK font file and point libass to it.
     configureFonts(mpv)
 
+    // libass reads cache limits when its subtitle renderer is created.
+    setOptionString("sub-glyph-limit", "100000")
+    setOptionString("sub-bitmap-max-size", "256")
+
     // Initialize mpv
     log("Initializing mpv...")
     let initResult = mpv_initialize(mpv)
@@ -208,7 +212,7 @@ class ExpoMpvView: ExpoView {
     mpv_observe_property(mpv, 10, "video-params/h", MPV_FORMAT_INT64)
     mpv_observe_property(mpv, 11, "core-idle", MPV_FORMAT_FLAG)
     mpv_observe_property(mpv, 12, "video-params/sig-peak", MPV_FORMAT_DOUBLE)
-    mpv_observe_property(mpv, 13, "current-tracks/sub/codec", MPV_FORMAT_STRING)
+    mpv_observe_property(mpv, 13, "sid", MPV_FORMAT_INT64)
 
     // Set wakeup callback for the event loop
     let rawSelf = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
@@ -369,6 +373,12 @@ class ExpoMpvView: ExpoView {
               let prefix = msg.prefix.map { String(cString: $0) } ?? "?"
               let level = msg.level.map { String(cString: $0) } ?? "?"
               self.log("[\(prefix)] [\(level)] \(logText)")
+              if logText.contains("OSD bitmaps do not fit") {
+                let codec = self.getString("current-tracks/sub/codec")?.lowercased()
+                if codec == "ass" || codec == "ssa" {
+                  self.setPropertyString("force-rgba-osd-rendering", "yes")
+                }
+              }
             }
           }
 
@@ -464,12 +474,10 @@ class ExpoMpvView: ExpoView {
     let name = String(cString: cName)
 
     switch name {
-    case "current-tracks/sub/codec":
-      // Thousands of overlapping ASS drawings can overflow the GPU bitmap atlas.
-      // Composite them before upload, preserving window resolution and margins.
-      let codec = getString(name)?.lowercased() ?? ""
-      let mode = codec == "ass" || codec == "ssa" ? "yes" : "no"
-      setPropertyString("force-rgba-osd-rendering", mode)
+    case "sid":
+      // Compact ASS masks normally fit the GPU atlas. Retry on track changes;
+      // an actual atlas overflow can still fall back to RGBA composition.
+      setPropertyString("force-rgba-osd-rendering", "no")
 
     // These flags all feed the unified state machine; let computeState() decide.
     case "pause", "core-idle", "eof-reached":
@@ -549,6 +557,7 @@ class ExpoMpvView: ExpoView {
     }
     log("loadFile: \(url)")
     hasSource = true
+    setPropertyString("force-rgba-osd-rendering", "no")
     command("loadfile", args: [url, "replace"])
     // Enter "loading" immediately. We force it here (rather than via
     // computeState) because right after loadfile mpv may still report the

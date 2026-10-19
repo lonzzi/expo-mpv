@@ -146,6 +146,7 @@ const withExpoMpv = (config) => {
                 stdio: 'inherit',
             });
             (0, child_process_1.execFileSync)('python3', [path_1.default.join(packageDir, 'ios', 'enable-sup-demuxer.py'), frameworksDir], { stdio: 'inherit' });
+            (0, child_process_1.execFileSync)('python3', [path_1.default.join(packageDir, 'ios', 'optimize-libass.py'), frameworksDir], { stdio: 'inherit' });
             return config;
         },
     ]);

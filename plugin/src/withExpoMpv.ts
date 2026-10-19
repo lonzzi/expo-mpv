@@ -165,6 +165,9 @@ const withExpoMpv: ConfigPlugin = (config) => {
         [path.join(packageDir, 'ios', 'enable-sup-demuxer.py'), frameworksDir],
         { stdio: 'inherit' },
       );
+      execFileSync('python3', [path.join(packageDir, 'ios', 'optimize-libass.py'), frameworksDir], {
+        stdio: 'inherit',
+      });
       return config;
     },
   ]);

@@ -362,12 +362,10 @@ internal class MpvPlayer(
 
     fun onPropertyChange(name: String, value: Any?) {
         when (name) {
-            "current-tracks/sub/codec" -> runOnPlayerThread {
-                // Composite overlapping ASS drawings before GPU upload rather
-                // than packing thousands of them into an oversized atlas.
-                val codec = getPropertyStringLocked(name)?.lowercase()
-                val mode = if (codec == "ass" || codec == "ssa") "yes" else "no"
-                setPropertyStringLocked("force-rgba-osd-rendering", mode)
+            "sid" -> runOnPlayerThread {
+                // Retry GPU rendering for each newly selected track. Sparse ASS
+                // drawings use compact masks; retain RGBA only as an overflow fallback.
+                setPropertyStringLocked("force-rgba-osd-rendering", "no")
             }
             "time-pos" -> cachedTimePos = (value as? Double) ?: 0.0
             "duration" -> cachedDuration = (value as? Double) ?: 0.0
@@ -425,6 +423,14 @@ internal class MpvPlayer(
 
     fun onLogMessage(prefix: String, level: String, text: String) {
         Log.d("ExpoMpv", "[$prefix] [$level] $text")
+        if (text.contains("OSD bitmaps do not fit")) {
+            runOnPlayerThread {
+                val codec = getPropertyStringLocked("current-tracks/sub/codec")?.lowercase()
+                if (codec == "ass" || codec == "ssa") {
+                    setPropertyStringLocked("force-rgba-osd-rendering", "yes")
+                }
+            }
+        }
     }
 
     private fun createMpvLocked() {
@@ -438,6 +444,10 @@ internal class MpvPlayer(
 
         MPVLib.nativeSetCallback(nativePtr, this)
 
+        // Set before subtitle decoders are created; changing these options while
+        // a track is active does not resize libass's existing caches.
+        MPVLib.nativeSetOptionString(nativePtr, "sub-glyph-limit", "100000")
+        MPVLib.nativeSetOptionString(nativePtr, "sub-bitmap-max-size", "512")
         MPVLib.nativeSetOptionString(nativePtr, "vo", "gpu")
         MPVLib.nativeSetOptionString(nativePtr, "gpu-context", "android")
         MPVLib.nativeSetOptionString(nativePtr, "opengl-es", "yes")
@@ -525,7 +535,7 @@ internal class MpvPlayer(
         MPVLib.nativeObserveProperty(ptr, "demuxer-cache-duration", MPVLib.FORMAT_DOUBLE)
         MPVLib.nativeObserveProperty(ptr, "video-params/w", MPVLib.FORMAT_INT64)
         MPVLib.nativeObserveProperty(ptr, "video-params/h", MPVLib.FORMAT_INT64)
-        MPVLib.nativeObserveProperty(ptr, "current-tracks/sub/codec", MPVLib.FORMAT_STRING)
+        MPVLib.nativeObserveProperty(ptr, "sid", MPVLib.FORMAT_INT64)
     }
 
     private fun maybeLoadPendingSourceLocked() {
@@ -533,6 +543,7 @@ internal class MpvPlayer(
         if (!isPlayerReadyLocked()) return
 
         pendingSource = null
+        setPropertyStringLocked("force-rgba-osd-rendering", "no")
         commandLocked("loadfile", source, "replace")
     }
 

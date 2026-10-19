@@ -71,3 +71,5 @@ plugin/build/*
 release.sh
 
 /**/*.tsbuildinfo
+
+**/__pycache__/

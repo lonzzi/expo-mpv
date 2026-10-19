@@ -68,10 +68,11 @@ npx expo prebuild
 
 There is no separate Android setup script to run.
 
-ASS/SSA subtitles are composited into RGBA bitmaps before GPU upload so complex
-vector effects fit on high-resolution displays. Other subtitle formats keep
-their default rendering, and subtitle resolution, positioning, and margins are
-preserved.
+ASS/SSA rendering uses a patched libass that keeps disconnected drawing contours
+in compact masks, skips offscreen drawings and shares unfiltered bitmap storage.
+The original subtitle text, timing, layout and effects are preserved. Rendering
+normally stays on the GPU; an actual bitmap-atlas overflow falls back to RGBA
+composition for that track.
 
 ### iOS notes
 
@@ -80,6 +81,7 @@ preserved.
 - After downloading, the plugin rebuilds MPVKit 0.41.0's small MoltenVK backend so rotation and view resizing update mpv's viewport as well as the Metal surface. It preserves the existing decoder, audio, tracks, and playback position.
 - The plugin also enables the standalone SUP demuxer in iOS FFmpeg archives. It merges PGS segments into complete subtitle frames through FFmpeg's `pgs_frame_merge` filter, retaining the original bitmap data and timestamps for playback and seeking.
 - This repair requires Python 3 and Xcode command-line tools. Its mpv and Vulkan header sources are checksum pinned and cached. Existing native projects can run `python3 node_modules/expo-mpv/ios/fix-moltenvk-resize.py node_modules/expo-mpv/ios/Frameworks` before rebuilding.
+- The plugin rebuilds libass 0.17.4's cache, renderer and shaper for every iOS architecture using an exact source commit and the maintained `native/libass-sparse-drawings.patch`. This also requires Git; fetched source objects are cached. Existing native projects can run `python3 node_modules/expo-mpv/ios/optimize-libass.py node_modules/expo-mpv/ios/Frameworks` before rebuilding.
 - The first prebuild / native build can take a while because the media stack is large
 
 ### Android notes
@@ -89,6 +91,8 @@ preserved.
 - `libmpv` shared libraries are downloaded from `mpv-android` releases during Gradle build
 - The module replaces merged `libc++_shared.so` with the `mpv-android` version so `libmpv.so` can load correctly at runtime
 - Default hardware decode mode on Android is `mediacodec`
+- Gradle installs a checksum-pinned MPV/libass repair from this project's release assets. `libmpv.so` contains the rebuilt core and renderer; `libmpb.so` retains the original mpv-android codec/dependency ABI. Both are required. The original FFmpeg libraries and hardware/audio backends are retained.
+- Maintainers can rebuild all four Android ABIs with `native/build-android-ass.py --input <unmodified-jniLibs> --ndk <NDK-27.1.12297006> --work <new-build-directory>`. It requires Python 3.12+, Meson (or uv), Ninja, NASM, pkg-config and development headers for FreeType, FriBidi, HarfBuzz, libunibreak and fontconfig. Native sources and upstream library inputs are pinned and validated; the build fails if the optimized renderer is absent or runtime paths reference the build directory.
 
 If you use network streams on Android, make sure your app networking/security setup allows them as usual for your project.
 

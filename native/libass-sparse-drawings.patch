@@ -1,0 +1,536 @@
+diff --git a/libass/ass_cache.c b/libass/ass_cache.c
+index 47069c1..1e8ada4 100644
+--- a/libass/ass_cache.c
++++ b/libass/ass_cache.c
+@@ -186,6 +186,8 @@ static ass_hashcode outline_hash(void *key, ass_hashcode hval)
+         return glyph_hash(&k->u, hval);
+     case OUTLINE_DRAWING:
+         return drawing_hash(&k->u, hval);
++    case OUTLINE_COMPONENT:
++        return component_hash(&k->u, hval);
+     case OUTLINE_BORDER:
+         return border_hash(&k->u, hval);
+     default:  // OUTLINE_BOX
+@@ -204,6 +206,8 @@ static bool outline_compare(void *a, void *b)
+         return glyph_compare(&ak->u, &bk->u);
+     case OUTLINE_DRAWING:
+         return drawing_compare(&ak->u, &bk->u);
++    case OUTLINE_COMPONENT:
++        return component_compare(&ak->u, &bk->u);
+     case OUTLINE_BORDER:
+         return border_compare(&ak->u, &bk->u);
+     default:  // OUTLINE_BOX
+@@ -222,7 +226,9 @@ static bool outline_key_move(void *dst, void *src)
+         d->u.drawing.text.str = ass_copy_string(s->u.drawing.text);
+         return d->u.drawing.text.str;
+     }
+-    if (s->type == OUTLINE_BORDER)
++    if (s->type == OUTLINE_COMPONENT)
++        ass_cache_inc_ref(s->u.component.outline);
++    else if (s->type == OUTLINE_BORDER)
+         ass_cache_inc_ref(s->u.border.outline);
+     else if (s->type == OUTLINE_GLYPH)
+         ass_cache_inc_ref(s->u.glyph.font);
+@@ -235,6 +241,9 @@ static void outline_destruct(void *key, void *value)
+     OutlineHashKey *k = key;
+     ass_outline_free(&v->outline[0]);
+     ass_outline_free(&v->outline[1]);
++    for (int i = 0; i < v->sparse_count; i++)
++        ass_outline_free(&v->sparse_parts[i]);
++    free(v->sparse_parts);
+     switch (k->type) {
+     case OUTLINE_GLYPH:
+         ass_cache_dec_ref(k->u.glyph.font);
+@@ -242,6 +251,9 @@ static void outline_destruct(void *key, void *value)
+     case OUTLINE_DRAWING:
+         free((char *) k->u.drawing.text.str);
+         break;
++    case OUTLINE_COMPONENT:
++        ass_cache_dec_ref(k->u.component.outline);
++        break;
+     case OUTLINE_BORDER:
+         ass_cache_dec_ref(k->u.border.outline);
+         break;
+@@ -333,6 +345,7 @@ typedef struct cache_item {
+     struct cache_item *next, **prev;
+     struct cache_item *queue_next, **queue_prev;
+     size_t size, ref_count;
++    ass_hashcode hash;
+ } CacheItem;
+ 
+ struct cache {
+@@ -385,10 +398,11 @@ void *ass_cache_get(Cache *cache, void *key, void *priv)
+ {
+     const CacheDesc *desc = cache->desc;
+     size_t key_offs = CACHE_ITEM_SIZE + align_cache(desc->value_size);
+-    unsigned bucket = desc->hash_func(key, ASS_HASH_INIT) % cache->buckets;
++    ass_hashcode hash = desc->hash_func(key, ASS_HASH_INIT);
++    unsigned bucket = hash % cache->buckets;
+     CacheItem *item = cache->map[bucket];
+     while (item) {
+-        if (desc->compare_func(key, (char *) item + key_offs)) {
++        if (item->hash == hash && desc->compare_func(key, (char *) item + key_offs)) {
+             assert(item->size);
+             if (!item->queue_prev || item->queue_next) {
+                 if (item->queue_prev) {
+@@ -413,6 +427,7 @@ void *ass_cache_get(Cache *cache, void *key, void *priv)
+         desc->key_move_func(NULL, key);
+         return NULL;
+     }
++    item->hash = hash;
+     item->cache = cache;
+     item->desc = desc;
+     void *new_key = (char *) item + key_offs;
+diff --git a/libass/ass_cache.h b/libass/ass_cache.h
+index 53eac20..53f2cc5 100644
+--- a/libass/ass_cache.h
++++ b/libass/ass_cache.h
+@@ -40,6 +40,9 @@ typedef struct {
+     ASS_Rect cbox;  // bounding box of all control points
+     int advance;    // 26.6, advance distance to the next outline in line
+     int asc, desc;  // ascender/descender
++    ASS_Rect tight_cbox;
++    int sparse_count;
++    ASS_Outline *sparse_parts;
+ } OutlineHashValue;
+ 
+ // Create definitions for bitmap, outline and composite hash keys
+@@ -62,11 +65,13 @@ typedef struct outline_hash_key {
+         OUTLINE_DRAWING,
+         OUTLINE_BORDER,
+         OUTLINE_BOX,
++        OUTLINE_COMPONENT,
+     } type;
+     union {
+         GlyphHashKey glyph;
+         DrawingHashKey drawing;
+         BorderHashKey border;
++        ComponentHashKey component;
+     } u;
+ } OutlineHashKey;
+ 
+diff --git a/libass/ass_cache_template.h b/libass/ass_cache_template.h
+index 84d6f4c..893765d 100644
+--- a/libass/ass_cache_template.h
++++ b/libass/ass_cache_template.h
+@@ -113,6 +113,12 @@ START(border, border_hash_key)
+     VECTOR(border)  // border size in STROKER_ACCURACY units
+ END(BorderHashKey)
+ 
++// A disjoint component keeps the original drawing's transform quantization.
++START(component, component_hash_key)
++    GENERIC(OutlineHashValue *, outline)
++    GENERIC(int, index)
++END(ComponentHashKey)
++
+ // describes post-combining effects
+ START(filter, filter_desc)
+     GENERIC(int, flags)
+diff --git a/libass/ass_render.c b/libass/ass_render.c
+index 68b11fe..84f1538 100644
+--- a/libass/ass_render.c
++++ b/libass/ass_render.c
+@@ -210,7 +210,7 @@ void ass_renderer_done(ASS_Renderer *render_priv)
+ static ASS_Image *my_draw_bitmap(unsigned char *bitmap, int bitmap_w,
+                                  int bitmap_h, int stride, int dst_x,
+                                  int dst_y, uint32_t color,
+-                                 CompositeHashValue *source)
++                                 void *source)
+ {
+     ASS_ImagePriv *img = malloc(sizeof(ASS_ImagePriv));
+     if (!img) {
+@@ -320,7 +320,7 @@ static ASS_Image **render_glyph_i(RenderContext *state,
+                                   Bitmap *bm, int dst_x, int dst_y,
+                                   uint32_t color, uint32_t color2, int brk,
+                                   ASS_Image **tail, unsigned type,
+-                                  CompositeHashValue *source)
++                                  void *source)
+ {
+     ASS_Renderer *render_priv = state->renderer;
+     int i, j, x0, y0, x1, y1, cx0, cy0, cx1, cy1, sx, sy, zx, zy;
+@@ -424,7 +424,7 @@ static ASS_Image **render_glyph_i(RenderContext *state,
+ static ASS_Image **
+ render_glyph(RenderContext *state, Bitmap *bm, int dst_x, int dst_y,
+              uint32_t color, uint32_t color2, int brk, ASS_Image **tail,
+-             unsigned type, CompositeHashValue *source)
++             unsigned type, void *source)
+ {
+     // Inverse clipping in use?
+     if (state->clip_mode)
+@@ -1231,6 +1231,201 @@ get_outline_glyph(RenderContext *state, GlyphInfo *info)
+     info->desc = ass_lrint(desc * scale.y);
+ }
+ 
++
++// Keep disconnected drawing contours in small raster surfaces. The geometry,
++// winding of overlapping contours, layout and original transform stay intact.
++typedef struct {
++    size_t point, points, segment, segments;
++    ASS_Rect box;
++    int parent;
++} SparseContour;
++
++static int sparse_root(SparseContour *c, int i)
++{
++    while (c[i].parent != i) {
++        c[i].parent = c[c[i].parent].parent;
++        i = c[i].parent;
++    }
++    return i;
++}
++
++static void sparse_outline_parts(OutlineHashValue *v)
++{
++    const ASS_Outline *ol = &v->outline[0];
++    int count = 0;
++    for (size_t i = 0; i < ol->n_segments; i++)
++        count += !!(ol->segments[i] & OUTLINE_CONTOUR_END);
++    if (count < 2 || count > 1024)
++        return;
++    SparseContour *c = calloc(count, sizeof(*c));
++    if (!c)
++        return;
++    size_t point = 0, first_point = 0, first_seg = 0;
++    int n = 0;
++    for (size_t i = 0; i < ol->n_segments; i++) {
++        point += ol->segments[i] & OUTLINE_COUNT_MASK;
++        if (!(ol->segments[i] & OUTLINE_CONTOUR_END))
++            continue;
++        c[n].point = first_point;
++        c[n].points = point - first_point;
++        c[n].segment = first_seg;
++        c[n].segments = i + 1 - first_seg;
++        c[n].parent = n;
++        rectangle_reset(&c[n].box);
++        for (size_t j = first_point; j < point; j++) {
++            ASS_Vector p = ol->points[j];
++            rectangle_update(&c[n].box, p.x, p.y, p.x, p.y);
++        }
++        first_point = point;
++        first_seg = i + 1;
++        n++;
++    }
++    if (point != ol->n_points || first_seg != ol->n_segments) {
++        free(c);
++        return;
++    }
++    // Eight script pixels protect antialiased boundaries at scales >= 1/4.
++    const int64_t pad = 8 * 64;
++    for (int i = 0; i < count; i++)
++        for (int j = 0; j < i; j++) {
++            ASS_Rect a = c[i].box, b = c[j].box;
++            if ((int64_t)a.x_min <= b.x_max + pad &&
++                (int64_t)b.x_min <= a.x_max + pad &&
++                (int64_t)a.y_min <= b.y_max + pad &&
++                (int64_t)b.y_min <= a.y_max + pad)
++                c[sparse_root(c, i)].parent = sparse_root(c, j);
++        }
++    int groups = 0;
++    double area = 0;
++    for (int i = 0; i < count; i++) {
++        if (sparse_root(c, i) != i)
++            continue;
++        ASS_Rect box;
++        rectangle_reset(&box);
++        for (int j = 0; j < count; j++)
++            if (sparse_root(c, j) == i)
++                rectangle_update(&box, c[j].box.x_min, c[j].box.y_min,
++                                 c[j].box.x_max, c[j].box.y_max);
++        area += (double)(box.x_max - box.x_min + 64) *
++                (box.y_max - box.y_min + 64);
++        groups++;
++    }
++    double original = (double)(v->cbox.x_max - v->cbox.x_min + 64) *
++                      (v->cbox.y_max - v->cbox.y_min + 64);
++    if (groups < 2 || original < 65536.0 * 4096 || area > original * .5) {
++        free(c);
++        return;
++    }
++    ASS_Outline *parts = calloc(groups, sizeof(*parts));
++    if (!parts) {
++        free(c);
++        return;
++    }
++    int group = 0;
++    for (int i = 0; i < count; i++) {
++        if (sparse_root(c, i) != i)
++            continue;
++        size_t np = 0, ns = 0;
++        for (int j = 0; j < count; j++)
++            if (sparse_root(c, j) == i) {
++                np += c[j].points;
++                ns += c[j].segments;
++            }
++        if (!ass_outline_alloc(&parts[group], np, ns)) {
++            for (int j = 0; j < groups; j++)
++                ass_outline_free(&parts[j]);
++            free(parts);
++            free(c);
++            return;
++        }
++        ASS_Outline *p = &parts[group++];
++        for (int j = 0; j < count; j++)
++            if (sparse_root(c, j) == i) {
++                memcpy(p->points + p->n_points, ol->points + c[j].point,
++                       c[j].points * sizeof(ASS_Vector));
++                memcpy(p->segments + p->n_segments, ol->segments + c[j].segment,
++                       c[j].segments);
++                p->n_points += c[j].points;
++                p->n_segments += c[j].segments;
++            }
++    }
++    v->sparse_count = groups;
++    v->sparse_parts = parts;
++    free(c);
++}
++
++static void calc_transform_matrix(RenderContext *state, GlyphInfo *info, double m[3][3]);
++
++static void expand_sparse_drawing(RenderContext *state, double device_x, double device_y)
++{
++    TextInfo *text = &state->text_info;
++    if (text->length != 1)
++        return;
++    GlyphInfo *head = text->glyphs;
++    if (!head->drawing_text.str || head->next || !head->outline ||
++        !head->outline->sparse_count || head->border_style != 1 ||
++        head->border_x || head->border_y || head->shadow_x || head->shadow_y ||
++        head->be || head->blur || head->frx || head->fry || head->frz ||
++        head->fax || head->fay || head->effect_type != EF_NONE ||
++        head->transform.scale.x < .25 || head->transform.scale.y < .25)
++        return;
++    OutlineHashValue *source = head->outline;
++    double m[3][3];
++    GlyphInfo positioned = *head;
++    int left = state->renderer->settings.left_margin;
++    device_x = (device_x - left) * state->renderer->par_scale_x + left;
++    positioned.pos.x = double_to_d6(device_x + d6_to_double(head->pos.x) * state->renderer->par_scale_x);
++    positioned.pos.y = double_to_d6(device_y) + head->pos.y;
++    calc_transform_matrix(state, &positioned, m);
++    const ASS_Transform *tr = &head->transform;
++    double sx = m[0][0] * tr->scale.x / m[2][2] / 64;
++    double sy = m[1][1] * tr->scale.y / m[2][2] / 64;
++    double tx = (m[0][0] * tr->offset.x + m[0][2]) / m[2][2] / 64;
++    double ty = (m[1][1] * tr->offset.y + m[1][2]) / m[2][2] / 64;
++    GlyphInfo first = {0};
++    GlyphInfo **tail = &first.next;
++    bool any = false;
++    for (int i = 0; i < source->sparse_count; i++) {
++        OutlineHashKey key = { .type = OUTLINE_COMPONENT };
++        key.u.component.outline = source;
++        key.u.component.index = i;
++        OutlineHashValue *part = ass_cache_get(state->renderer->cache.outline_cache,
++                                               &key, state->renderer);
++        if (part && part->valid) {
++            const ASS_Rect *b = &part->tight_cbox;
++            double x0 = sx * b->x_min + tx, x1 = sx * b->x_max + tx;
++            double y0 = sy * b->y_min + ty, y1 = sy * b->y_max + ty;
++            if (FFMAX(x0, x1) < -2 || FFMAX(y0, y1) < -2 ||
++                FFMIN(x0, x1) > state->renderer->settings.frame_width + 2 ||
++                FFMIN(y0, y1) > state->renderer->settings.frame_height + 2)
++                continue;
++        }
++        GlyphInfo *copy = !part || !part->valid ? NULL :
++            any ? malloc(sizeof(*copy)) : &first;
++        if (!copy) {
++            GlyphInfo *item = first.next;
++            while (item) {
++                GlyphInfo *next = item->next;
++                free(item);
++                item = next;
++            }
++            return;
++        }
++        *copy = *head;
++        copy->outline = part;
++        copy->starts_new_run = true;
++        copy->next = NULL;
++        if (any)
++            *tail = copy;
++        any = true;
++        tail = &copy->next;
++    }
++    if (any)
++        *head = first;
++    else
++        head->skip = true;
++}
++
+ size_t ass_outline_construct(void *key, void *value, void *priv)
+ {
+     ASS_Renderer *render_priv = priv;
+@@ -1239,6 +1434,28 @@ size_t ass_outline_construct(void *key, void *value, void *priv)
+     memset(v, 0, sizeof(*v));
+ 
+     switch (outline_key->type) {
++    case OUTLINE_COMPONENT:
++        {
++            OutlineHashValue *source = outline_key->u.component.outline;
++            int index = outline_key->u.component.index;
++            if (index < 0 || index >= source->sparse_count)
++                return 1;
++            const ASS_Outline *part = &source->sparse_parts[index];
++            if (!ass_outline_alloc(&v->outline[0], part->n_points, part->n_segments))
++                return 1;
++            memcpy(v->outline[0].points, part->points, part->n_points * sizeof(ASS_Vector));
++            memcpy(v->outline[0].segments, part->segments, part->n_segments);
++            v->outline[0].n_points = part->n_points;
++            v->outline[0].n_segments = part->n_segments;
++            rectangle_reset(&v->tight_cbox);
++            ass_outline_update_cbox(&v->outline[0], &v->tight_cbox);
++            v->cbox = source->cbox;
++            v->advance = source->advance;
++            v->asc = source->asc;
++            v->desc = source->desc;
++            v->valid = true;
++            return 1;
++        }
+     case OUTLINE_GLYPH:
+         {
+             GlyphHashKey *k = &outline_key->u.glyph;
+@@ -1316,7 +1533,10 @@ size_t ass_outline_construct(void *key, void *value, void *priv)
+     ass_outline_update_cbox(&v->outline[1], &v->cbox);
+     if (v->cbox.x_min > v->cbox.x_max || v->cbox.y_min > v->cbox.y_max)
+         v->cbox.x_min = v->cbox.y_min = v->cbox.x_max = v->cbox.y_max = 0;
++    v->tight_cbox = v->cbox;
+     v->valid = true;
++    if (outline_key->type == OUTLINE_DRAWING)
++        sparse_outline_parts(v);
+     return 1;
+ }
+ 
+@@ -1400,6 +1620,25 @@ get_bitmap_glyph(RenderContext *state, GlyphInfo *info,
+         m2[i][2] = m1[i][0] * tr->offset.x + m1[i][1] * tr->offset.y + m1[i][2];
+     }
+     memcpy(m, m2, sizeof(m));
++    // A solid drawing outside the output cannot contribute any pixels. Cull
++    // before rasterization and cache allocation, using conservative control
++    // point bounds and a two-pixel antialiasing guard.
++    if (info->drawing_text.str && !flags && !info->be && !info->blur &&
++        !info->frx && !info->fry && !info->frz && !info->fax && !info->fay &&
++        info->effect_type == EF_NONE) {
++        const ASS_Rect *b = &info->outline->tight_cbox;
++        double x0 = (m2[0][0] * b->x_min + m2[0][2]) / m2[2][2] / 64;
++        double x1 = (m2[0][0] * b->x_max + m2[0][2]) / m2[2][2] / 64;
++        double y0 = (m2[1][1] * b->y_min + m2[1][2]) / m2[2][2] / 64;
++        double y1 = (m2[1][1] * b->y_max + m2[1][2]) / m2[2][2] / 64;
++        if ((info->c[0] & 255) == 255 ||
++            FFMAX(x0, x1) < -2 || FFMAX(y0, y1) < -2 ||
++            FFMIN(x0, x1) > render_priv->settings.frame_width + 2 ||
++            FFMIN(y0, y1) > render_priv->settings.frame_height + 2) {
++            info->bm = info->bm_o = NULL;
++            return;
++        }
++    }
+ 
+     if (info->effect_type == EF_KARAOKE_KF)
+         ass_outline_update_min_transformed_x(&info->outline->outline[0], m, leftmost_x);
+@@ -2491,6 +2730,7 @@ static void render_and_combine_glyphs(RenderContext *state,
+             continue;
+ 
+         for (; info; info = info->next) {
++            if (info->starts_new_run) new_run = true;
+             int flags = 0;
+             if (info->border_style == 3)
+                 flags |= FILTER_BORDER_STYLE_3;
+@@ -2553,11 +2793,13 @@ static void render_and_combine_glyphs(RenderContext *state,
+                 current_info->image = NULL;
+ 
+                 current_info->bitmap_count = current_info->max_bitmap_count = 0;
+-                current_info->bitmaps = malloc(MAX_SUB_BITMAPS_INITIAL * sizeof(BitmapRef));
++                size_t initial = text_info->length == 1 && info->drawing_text.str ?
++                    1 : MAX_SUB_BITMAPS_INITIAL;
++                current_info->bitmaps = malloc(initial * sizeof(BitmapRef));
+                 if (!current_info->bitmaps)
+                     continue;
+ 
+-                current_info->max_bitmap_count = MAX_SUB_BITMAPS_INITIAL;
++                current_info->max_bitmap_count = initial;
+ 
+                 nb_bitmaps++;
+                 new_run = false;
+@@ -2602,6 +2844,23 @@ static void render_and_combine_glyphs(RenderContext *state,
+             info->effect_timing = lround(d6_to_double(info->leftmost_x) +
+                 d6_to_double(info->effect_timing) * render_priv->par_scale_x);
+ 
++        // No compositing or filtering is needed for one plain mask. Retain the
++        // bitmap cache entry directly in ASS_Image instead of looking up a
++        // second cache and copying the same pixels into a composite surface.
++        if (info->bitmap_count == 1 && info->effect_type == EF_NONE &&
++            !info->filter.flags && !info->filter.be &&
++            !info->filter.blur_x && !info->filter.blur_y &&
++            info->bitmaps[0].bm && !info->bitmaps[0].bm_o) {
++            BitmapRef *ref = &info->bitmaps[0];
++            info->bm = ref->bm;
++            info->x = ref->pos.x;
++            info->y = ref->pos.y;
++            info->image = ref->bm;
++            free(info->bitmaps);
++            info->bitmaps = NULL;
++            continue;
++        }
++
+         for (int j = 0; j < info->bitmap_count; j++) {
+             info->bitmaps[j].pos.x -= info->x;
+             info->bitmaps[j].pos.y -= info->y;
+@@ -3010,6 +3269,7 @@ ass_render_event(RenderContext *state, ASS_Event *event,
+     }
+ 
+     calculate_rotation_params(state, &bbox, device_x, device_y);
++    expand_sparse_drawing(state, device_x, device_y);
+ 
+     render_and_combine_glyphs(state, device_x, device_y);
+ 
+diff --git a/libass/ass_render.h b/libass/ass_render.h
+index 7a157ab..f960d69 100644
+--- a/libass/ass_render.h
++++ b/libass/ass_render.h
+@@ -51,7 +51,7 @@
+ 
+ typedef struct {
+     ASS_Image result;
+-    CompositeHashValue *source;
++    void *source;  // retained bitmap or composite cache entry
+     unsigned char *buffer;
+     size_t ref_count;
+ } ASS_ImagePriv;
+@@ -114,7 +114,7 @@ typedef struct {
+ 
+     int x, y;
+     Bitmap *bm, *bm_o, *bm_s;   // glyphs, outline, shadow bitmaps
+-    CompositeHashValue *image;
++    void *image;  // retained bitmap or composite cache entry
+ } CombinedBitmapInfo;
+ 
+ typedef struct {
+diff --git a/libass/ass_shaper.c b/libass/ass_shaper.c
+index d733d5d..2827158 100644
+--- a/libass/ass_shaper.c
++++ b/libass/ass_shaper.c
+@@ -954,6 +954,14 @@ bool ass_shaper_shape(ASS_Shaper *shaper, TextInfo *text_info)
+     if (!check_codepoint_allocations(shaper, text_info->length))
+         return false;
+ 
++    // A single drawing has no text to shape or reorder. Avoid allocating
++    // FriBidi paragraph state for every vector layer of an ASS sign.
++    if (text_info->length == 1 && glyphs[0].drawing_text.str) {
++        shaper->event_text[0] = glyphs[0].symbol;
++        glyphs[0].skip = false;
++        return true;
++    }
++
+     for (i = 0; i < text_info->length; i++)
+         shaper->event_text[i] = glyphs[i].symbol;
+ 
+@@ -1089,6 +1097,11 @@ FriBidiStrIndex *ass_shaper_reorder(ASS_Shaper *shaper, TextInfo *text_info)
+ {
+     int i, ret;
+ 
++    if (text_info->length == 1 && text_info->glyphs[0].drawing_text.str) {
++        shaper->cmap[0] = 0;
++        return shaper->cmap;
++    }
++
+     // Initialize reorder map
+     for (i = 0; i < text_info->length; i++)
+         shaper->cmap[i] = i;

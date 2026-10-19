@@ -19,3 +19,5 @@ __tests__
 /plugin/tsconfig.tsbuildinfo
 /release.sh
 /**/*.tsbuildinfo
+
+**/__pycache__/

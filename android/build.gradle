@@ -10,6 +10,8 @@ version = '0.1.10'
 def mpvAndroidTag = "2026-03-22"
 def mpvAbis = ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']
 def mpvLibsDir = file("src/main/jniLibs")
+def mpvAss = new groovy.json.JsonSlurper().parse(file("../native/android-ass.json"))
+def mpvNativeVersion = "${mpvAndroidTag}-ass-${mpvAss.sha256.take(12)}"
 
 android {
   namespace "expo.modules.mpv"
@@ -42,11 +44,12 @@ android {
 task downloadMpvNativeLibs {
   def versionFile = file("${mpvLibsDir}/.version")
 
+  inputs.property("nativeVersion", mpvNativeVersion)
   outputs.dir(mpvLibsDir)
 
   doLast {
-    if (versionFile.exists() && versionFile.text.trim() == mpvAndroidTag) {
-      logger.lifecycle("[expo-mpv] Native libs already up-to-date (${mpvAndroidTag})")
+    if (versionFile.exists() && versionFile.text.trim() == mpvNativeVersion) {
+      logger.lifecycle("[expo-mpv] Native libs already up-to-date (${mpvNativeVersion})")
       return
     }
 
@@ -83,7 +86,29 @@ task downloadMpvNativeLibs {
       logger.lifecycle("[expo-mpv]   ${abi}: done")
     }
 
-    versionFile.text = mpvAndroidTag
+    def assDir = file("${buildDir}/tmp/mpv-ass")
+    assDir.mkdirs()
+    def assZip = file("${assDir}/${mpvAss.asset}")
+    ant.get(src: "https://github.com/lonzzi/expo-mpv/releases/download/v${mpvAss.version}/${mpvAss.asset}", dest: assZip)
+    def digest = java.security.MessageDigest.getInstance("SHA-256").digest(assZip.bytes).encodeHex().toString()
+    if (digest != mpvAss.sha256) {
+      throw new GradleException("[expo-mpv] Invalid optimized libass native archive checksum")
+    }
+    copy {
+      from(zipTree(assZip)) {
+        mpvAbis.each { abi ->
+          include "${abi}/libmpv.so", "${abi}/libmpb.so"
+        }
+      }
+      into(mpvLibsDir)
+    }
+    mpvAbis.each { abi ->
+      if (!file("${mpvLibsDir}/${abi}/libmpb.so").exists()) {
+        throw new GradleException("[expo-mpv] Missing optimized dependency bundle for ${abi}")
+      }
+    }
+    assDir.deleteDir()
+    versionFile.text = mpvNativeVersion
     logger.lifecycle("[expo-mpv] All mpv native libraries downloaded.")
   }
 }

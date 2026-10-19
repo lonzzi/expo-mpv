@@ -40,5 +40,8 @@ jobs:
             exit 1
           fi
 
+      - name: Verify native renderer release asset
+        run: python3 native/verify-android-ass.py
+
       - name: Publish to npm
         run: npm publish --access public --provenance
