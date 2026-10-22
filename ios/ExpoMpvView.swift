@@ -24,6 +24,17 @@ class ExpoMpvView: ExpoView {
     }
   }
   private lazy var queue = DispatchQueue(label: "com.expo.mpv.event", qos: .userInitiated)
+  private final class WakeupContext {
+    private let handler: () -> Void
+
+    init(handler: @escaping () -> Void) { self.handler = handler }
+
+    func notify() {
+      // Never access the UIKit view from mpv's foreign callback threads.
+      DispatchQueue.main.async(execute: handler)
+    }
+  }
+  private var wakeupContext: WakeupContext?
   // Accessed on the main queue; replies from the mpv event queue are marshalled there.
   private struct PendingCommand {
     let name: String
@@ -214,13 +225,15 @@ class ExpoMpvView: ExpoView {
     mpv_observe_property(mpv, 12, "video-params/sig-peak", MPV_FORMAT_DOUBLE)
     mpv_observe_property(mpv, 13, "sid", MPV_FORMAT_INT64)
 
-    // Set wakeup callback for the event loop
-    let rawSelf = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+    // The callback can overlap deinit, so its userdata must outlive the view.
+    // Create the weak reference while the view is alive, then resolve it only
+    // on the main queue, where the UIKit view is owned and released.
+    let context = WakeupContext { [weak self] in self?.readEvents() }
+    wakeupContext = context
     mpv_set_wakeup_callback(mpv, { ctx in
       guard let ctx = ctx else { return }
-      let view = Unmanaged<ExpoMpvView>.fromOpaque(ctx).takeUnretainedValue()
-      view.readEvents()
-    }, rawSelf)
+      Unmanaged<WakeupContext>.fromOpaque(ctx).takeUnretainedValue().notify()
+    }, Unmanaged.passUnretained(context).toOpaque())
 
     // Load pending source if any
     if let source = pendingSource {
@@ -797,8 +810,10 @@ class ExpoMpvView: ExpoView {
       // Shutdown may wait for network workers; serialize it after event readers.
       // mpv's wid is an unretained layer pointer, so retain it through shutdown.
       let surface = metalLayer
+      let context = wakeupContext
+      wakeupContext = nil
       queue.async {
-        withExtendedLifetime(surface) { mpv_terminate_destroy(mpv) }
+        withExtendedLifetime((surface, context)) { mpv_terminate_destroy(mpv) }
       }
     }
   }
