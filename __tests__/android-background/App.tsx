@@ -1,5 +1,6 @@
 import { registerRootComponent } from 'expo';
 import { ExpoMpvView, type ExpoMpvViewRef } from 'expo-mpv';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
@@ -16,6 +17,7 @@ function report(event: string, data: unknown) {
 
 function App() {
   const player = useRef<ExpoMpvViewRef>(null);
+  const lastOrientation = useRef('');
   const [paused, setPaused] = useState(false);
   const [position, setPosition] = useState(0);
 
@@ -33,6 +35,14 @@ function App() {
         );
         if (stopped) return;
         setPaused(command.paused);
+        if (command.orientation && command.orientation !== lastOrientation.current) {
+          lastOrientation.current = command.orientation;
+          await ScreenOrientation.lockAsync(
+            command.orientation === 'landscape'
+              ? ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT
+              : ScreenOrientation.OrientationLock.PORTRAIT_UP,
+          );
+        }
         const [playback, tracks, media] = await Promise.all([
           player.current?.getPlaybackInfo(),
           player.current?.getCurrentTrackIds(),
@@ -55,7 +65,13 @@ function App() {
   }, []);
 
   return (
-    <View style={styles.root} onLayout={() => void SplashScreen.hideAsync()}>
+    <View
+      style={styles.root}
+      onLayout={({ nativeEvent }) => {
+        void SplashScreen.hideAsync();
+        report('layout', nativeEvent.layout);
+      }}
+    >
       <ExpoMpvView
         ref={player}
         source={config.source}

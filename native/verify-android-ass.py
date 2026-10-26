@@ -27,6 +27,9 @@ def main():
         manifest = json.loads(archive.read('manifest.json'))
         if manifest['patch_sha256'] != hashlib.sha256((root / 'libass-sparse-drawings.patch').read_bytes()).hexdigest():
             raise RuntimeError('Native asset was built from a different libass patch')
+        resize_hash = hashlib.sha256((root / 'android-surface-resize.patch').read_bytes()).hexdigest()
+        if manifest.get('android_resize_patch_sha256') != resize_hash:
+            raise RuntimeError('Native asset was built from a different Android resize patch')
         machines = {'armeabi-v7a': 40, 'arm64-v8a': 183, 'x86': 3, 'x86_64': 62}
         expected = {'manifest.json'}
         for abi, machine in machines.items():
@@ -36,6 +39,8 @@ def main():
                 library = archive.read(path)
                 if hashlib.sha256(library).hexdigest() != manifest['libraries'][abi][name]:
                     raise RuntimeError('Library checksum mismatch: ' + path)
+                if name == 'libmpv.so' and ('expo_mpv_android_resize_' + resize_hash[:16]).encode() not in library:
+                    raise RuntimeError('Android resize implementation is absent: ' + path)
                 if library[:4] != b'\x7fELF' or library[5] != 1 or int.from_bytes(library[18:20], 'little') != machine:
                     raise RuntimeError('Wrong ELF architecture: ' + path)
         if set(archive.namelist()) != expected or len(archive.namelist()) != len(expected):

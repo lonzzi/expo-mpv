@@ -92,7 +92,7 @@ composition for that track.
 - The module replaces merged `libc++_shared.so` with the `mpv-android` version so `libmpv.so` can load correctly at runtime
 - Default hardware decode mode on Android is `mediacodec`
 - Gradle installs a checksum-pinned MPV/libass repair from this project's release assets. `libmpv.so` contains the rebuilt core and renderer; `libmpb.so` retains the original mpv-android codec/dependency ABI. Both are required. The original FFmpeg libraries and hardware/audio backends are retained.
-- Maintainers can rebuild all four Android ABIs with `native/build-android-ass.py --input <unmodified-jniLibs> --ndk <NDK-27.1.12297006> --work <new-build-directory>`. It requires Python 3.12+, Meson (or uv), Ninja, NASM, pkg-config and development headers for FreeType, FriBidi, HarfBuzz, libunibreak and fontconfig. Native sources and upstream library inputs are pinned and validated; the build fails if the optimized renderer is absent or runtime paths reference the build directory.
+- Maintainers can rebuild all four Android ABIs with `native/build-android-ass.py --input <unmodified-jniLibs> --ndk <NDK-27.1.12297006> --work <new-build-directory>`. It requires Python 3.12+, Meson (or uv), Ninja, NASM, pkg-config and development headers for FreeType, FriBidi, HarfBuzz, libunibreak and fontconfig. The build applies both the subtitle renderer and Android Surface resize patches. Native sources and upstream library inputs are pinned and validated; the build fails if the optimized renderer is absent or runtime paths reference the build directory.
 
 If you use network streams on Android, make sure your app networking/security setup allows them as usual for your project.
 
@@ -237,8 +237,8 @@ bundle rather than the application bundle's root.
 
 ## Android background regression
 
-With a compiled Expo development host containing this module and
-`expo-splash-screen`, start its Metro server and run:
+With a compiled Expo development host containing this module,
+`expo-splash-screen`, and `expo-screen-orientation`, start its Metro server and run:
 
 ```bash
 bun run test:android-background --project /path/to/host --device emulator-5554
@@ -249,6 +249,22 @@ checks pause/position preservation and moving video after real background
 transitions, and verifies that the process and source were retained. Generated
 entries are removed afterwards; screenshots and logs stay in a temporary folder.
 Use `--bundle-id`, `--scheme`, `--adb-port`, and `--metro-port` for a different host.
+
+## Rotation regression
+
+```bash
+bun run test:ios-rotation --simulator <booted-simulator-udid>
+bun run test:android-background --project /path/to/host --device emulator-5554 --rotation
+```
+
+The rotation checks require Python with NumPy and Pillow, plus `ffmpeg`. The iOS
+runner also requires Xcode and the downloaded MPVKit frameworks. It compiles the
+production view, records four UIKit rotations during playback and pause, checks
+Metal layer gravity, and measures fully visible circle frames for distortion.
+Frames clipped by UIKit's transition are counted separately. The Android check
+uses the compiled development host and verifies centered, proportional video
+after the same four transitions. Both require one source load and retain their
+artifacts outside the repository.
 
 ## Architecture
 

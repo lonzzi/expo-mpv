@@ -97,6 +97,13 @@ def main():
     work.mkdir(parents=True)
     cache.mkdir(parents=True, exist_ok=True)
     sources = {name: source(name, cache, work / 'sources' / name) for name in SOURCES}
+    resize_patch = Path(__file__).with_name('android-surface-resize.patch')
+    resize_hash = hashlib.sha256(resize_patch.read_bytes()).hexdigest()
+    resize_marker = 'expo_mpv_android_resize_' + resize_hash[:16]
+    run('git', 'apply', '--check', resize_patch, cwd=sources['mpv'])
+    run('git', 'apply', resize_patch, cwd=sources['mpv'])
+    context = sources['mpv'] / 'video/out/opengl/context_android.c'
+    context.write_text(context.read_text() + f'\n__attribute__((visibility("default"))) void {resize_marker}(void) {{}}\n')
     libass = work / 'sources/libass'
     if args.libass_git:
         repository = args.libass_git.resolve()
@@ -117,7 +124,7 @@ def main():
     renderer = libass / 'libass/ass_render.c'
     renderer.write_text(renderer.read_text() + f'\nvoid {marker}(void) {{}}\n')
     headers = {name: run('pkg-config', '--cflags-only-I', name).strip() for name in ('freetype2', 'fribidi', 'harfbuzz', 'libunibreak', 'fontconfig')}
-    manifest = {'patch_sha256': patch_hash, 'libass_revision': LIBASS_REVISION, 'ndk': '27.1.12297006', 'header_packages': {name: run('pkg-config', '--modversion', name).strip() for name in headers}, 'libraries': {}}
+    manifest = {'patch_sha256': patch_hash, 'android_resize_patch_sha256': resize_hash, 'libass_revision': LIBASS_REVISION, 'ndk': '27.1.12297006', 'header_packages': {name: run('pkg-config', '--modversion', name).strip() for name in headers}, 'libraries': {}}
     for abi in args.abi or list(ARCH):
         print('Building ' + abi, flush=True)
         prefix = work / abi
@@ -193,8 +200,8 @@ c_link_args = ['-Wl,-z,max-page-size=16384', '-L{libs}']
         shutil.copy2(installed[0], output / 'libmpv.so')
         shutil.copy2(libs / 'libmpb.so', output / 'libmpb.so')
         symbols = run(tool / 'llvm-nm', '-D', output / 'libmpv.so')
-        if marker not in symbols or any(' U ass_' in line for line in symbols.splitlines()):
-            raise RuntimeError('Rebuilt libmpv does not contain all of patched libass')
+        if marker not in symbols or resize_marker not in symbols or any(' U ass_' in line for line in symbols.splitlines()):
+            raise RuntimeError('Rebuilt libmpv is missing the Android resize or complete libass repair')
         exported = {line.split()[-1] for line in run(tool / 'llvm-nm', '-D', '--defined-only', libs / 'libmpb.so').splitlines() if line.split()}
         prefixes = ('FT_', 'hb_', 'fribidi_', 'Fc', 'pl_', 'lua')
         imports = {line.split()[-1] for line in symbols.splitlines() if ' U ' in line and line.split()[-1].startswith(prefixes)}

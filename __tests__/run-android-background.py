@@ -2,8 +2,8 @@
 """Exercise the installed expo-mpv Android view through real Activity/Surface cycles.
 
 Requires adb, ffmpeg, and a running Metro server for an Expo development host
-containing expo-mpv and expo-splash-screen. The host must already be compiled
-with the native module under test. Generated entry files are removed on exit;
+containing expo-mpv, expo-splash-screen and expo-screen-orientation. The host must
+already be compiled with the native module under test. Generated entry files are removed on exit;
 all media, screenshots, logs and results stay in --output or a temporary folder.
 """
 import argparse
@@ -36,6 +36,7 @@ def main():
     parser.add_argument('--cycles', type=int, default=3)
     parser.add_argument('--seconds', type=float, default=15)
     parser.add_argument('--hwdec', default='no')
+    parser.add_argument('--rotation', action='store_true', help='Test playing/paused rotations instead of background cycles')
     parser.add_argument('--apk', type=Path)
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
@@ -72,7 +73,7 @@ def main():
     })
     events = []
     lock = threading.Lock()
-    control = {'paused': False}
+    control = {'paused': False, 'orientation': 'portrait' if args.rotation else None}
     log = (work / 'events.jsonl').open('w')
 
     class Handler(BaseHTTPRequestHandler):
@@ -149,6 +150,7 @@ def main():
     print(f'Artifacts: {work}', flush=True)
     provenance = {
         'device': args.device,
+        'nativeAsset': json.loads((ROOT / 'native/android-ass.json').read_text()),
         'workingTreeSources': {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
                     for path in (ROOT / 'android/src/main/java/expo/modules/mpv').glob('*.kt')},
     }
@@ -157,7 +159,19 @@ def main():
     (work / 'source.json').write_text(json.dumps(provenance, indent=2) + '\n')
     try:
         fixture = work / 'fixture.mp4'
-        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30',
+        if args.rotation:
+            pixels = bytearray()
+            for y in range(360):
+                for x in range(640):
+                    pixels.extend((0, 255, 0) if (x - 320) ** 2 + (y - 180) ** 2 <= 72 ** 2
+                                  else ((110, 110, 110) if x % 64 == 0 or y % 60 == 0 else (24, 24, 32)))
+            pattern = work / 'circle.ppm'
+            pattern.write_bytes(b'P6\n640 360\n255\n' + pixels)
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-loop', '1', '-i', str(pattern),
+                            '-t', '60', '-r', '60', '-c:v', 'libx264', '-preset', 'ultrafast',
+                            '-crf', '18', '-pix_fmt', 'yuv420p', str(fixture)], check=True)
+        else:
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30',
                         '-f', 'lavfi', '-i', 'sine=frequency=660:sample_rate=48000', '-t', '60',
                         '-vf', 'hue=h=12*t', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
                         '-c:a', 'aac', '-movflags', '+faststart', str(fixture)], check=True)
@@ -182,6 +196,45 @@ def main():
         pid = device('shell', 'pidof', args.bundle_id)
         frame('initial')
         results = []
+        if args.rotation:
+            import numpy as np
+            from PIL import Image
+            paused_position = None
+            for index, orientation in enumerate(['landscape', 'portrait', 'landscape', 'portrait']):
+                mark = len(snapshot())
+                control.update(paused=index >= 2, orientation=orientation)
+                layout = wait(lambda event: event['event'] == 'layout' and
+                              ((event['data']['width'] > event['data']['height']) == (orientation == 'landscape')),
+                              'rotated viewport', mark)
+                current = telemetry(lambda data: data.get('playback', {}).get('isPlaying') == (index < 2),
+                          'rotation playback state', mark)
+                if index == 2:
+                    paused_position = current['playback']['position']
+                if index == 3:
+                    assert abs(current['playback']['position'] - paused_position) < .5, current
+                time.sleep(1)
+                path = work / f'rotation-{index}.png'
+                path.write_bytes(device('exec-out', 'screencap', '-p', binary=True))
+                image = np.array(Image.open(path).convert('RGB'))
+                y, x = np.where((image[:, :, 1] > 150) & (image[:, :, 0] < 65) & (image[:, :, 2] < 65))
+                assert len(x) > 1000, f'Video circle missing after rotation: {path}'
+                eigenvalues = np.linalg.eigvalsh(np.cov(np.stack([x, y]), bias=True))
+                ratio = float(np.sqrt(eigenvalues[1] / eigenvalues[0]))
+                assert ratio < 1.08, f'Video stretched after rotation: {ratio}, {path}'
+                height, width = image.shape[:2]
+                assert abs(x.mean() / width - .5) < .05 and abs(y.mean() / height - .5) < .05, path
+                results.append({'orientation': orientation, 'paused': index >= 2,
+                                'layout': layout['data'], 'aspectRatio': ratio})
+            loads = [event for event in snapshot() if event['event'] == 'load']
+            errors = [event for event in snapshot() if event['event'] == 'error']
+            assert len(loads) == 1 and not errors, (loads, errors)
+            assert device('shell', 'pidof', args.bundle_id) == pid, 'Process recreated during rotation'
+            native_log = device('logcat', '-d', f'--pid={pid}')
+            assert not re.search(r'Missing surface pointer|Error opening/initializing.*VO|EGL_BAD_SURFACE', native_log), 'Native surface error'
+            (work / 'result.json').write_text(json.dumps({'passed': True, 'rotations': results,
+                                                       'sourceLoadCount': len(loads)}, indent=2) + '\n')
+            print('PASS: four playing/paused rotations; centered, proportional video, one source load', flush=True)
+            return
         for cycle in range(args.cycles):
             mark = len(snapshot())
             control['paused'] = True

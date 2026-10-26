@@ -1,0 +1,62 @@
+diff --git a/video/out/opengl/context_android.c b/video/out/opengl/context_android.c
+--- a/video/out/opengl/context_android.c
++++ b/video/out/opengl/context_android.c
+@@ -28,12 +28,20 @@
+     EGLDisplay egl_display;
+     EGLContext egl_context;
+     EGLSurface egl_surface;
++    bool redraw_after_resize;
+ };
+ 
+ static void android_swap_buffers(struct ra_ctx *ctx)
+ {
+     struct priv *p = ctx->priv;
+     eglSwapBuffers(p->egl_display, p->egl_surface);
++    // EGL adopts the new buffer geometry at the swap. A paused player needs
++    // another draw into that buffer; otherwise its only redraw used the old one.
++    if (p->redraw_after_resize) {
++        p->redraw_after_resize = false;
++        ctx->vo->want_redraw = true;
++        vo_wakeup(ctx->vo);
++    }
+ }
+ 
+ static void android_uninit(struct ra_ctx *ctx)
+@@ -105,6 +113,7 @@
+ 
+ static bool android_reconfig(struct ra_ctx *ctx)
+ {
++    struct priv *p = ctx->priv;
+     int w, h;
+     if (!vo_android_surface_size(ctx->vo, &w, &h))
+         return false;
+@@ -116,6 +125,7 @@
+         ANativeWindow_setBuffersGeometry(native_window, w, h, current_format);
+     }
+ 
++    p->redraw_after_resize = true;
+     ctx->vo->dwidth = w;
+     ctx->vo->dheight = h;
+     ra_gl_ctx_resize(ctx->swapchain, w, h, 0);
+@@ -124,6 +134,21 @@
+ 
+ static int android_control(struct ra_ctx *ctx, int *events, int request, void *arg)
+ {
++    // SurfaceHolder updates android-surface-size without reopening the file.
++    // Reconfigure the EGL buffers and viewport on the VO thread, including while
++    // paused, before asking the renderer to redraw its retained video frame.
++    if (request == VOCTRL_VO_OPTS_CHANGED || request == VOCTRL_CHECK_EVENTS) {
++        int w, h;
++        if (vo_android_surface_size(ctx->vo, &w, &h) &&
++            (w != ctx->vo->dwidth || h != ctx->vo->dheight))
++        {
++            if (!android_reconfig(ctx))
++                return VO_FALSE;
++            *events |= VO_EVENT_RESIZE | VO_EVENT_EXPOSE;
++        }
++        return VO_TRUE;
++    }
++
+     return VO_NOTIMPL;
+ }
+ 

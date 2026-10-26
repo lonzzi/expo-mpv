@@ -22,7 +22,7 @@ def command(*args):
     return subprocess.check_output(args, text=True).strip()
 
 
-def build(work, module):
+def build(work, module, app_source=None, bundle=BUNDLE):
     sdk = command('xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path')
     arch = command('uname', '-m')
     base = ['xcrun', '--sdk', 'iphonesimulator', 'swiftc', '-sdk', sdk, '-target',
@@ -38,7 +38,7 @@ def build(work, module):
                        'ExpoModulesCore', str(ROOT / '__tests__/ios-commands/ExpoModulesCore.swift'),
                        '-emit-module-path', str(work / 'ExpoModulesCore.swiftmodule'),
                        '-o', str(work / 'libExpoModulesCore.a')])
-        args = ['-module-name', 'LifecycleTest', '-I', str(work), str(sources / 'App.swift'),
+        args = ['-module-name', 'LifecycleTest', '-I', str(work), str(app_source or sources / 'App.swift'),
                 str(module / 'ios/ExpoMpvView.swift'), str(work / 'libExpoModulesCore.a')]
         for framework in sorted((module / 'ios/Frameworks').glob('*.xcframework')):
             info = plistlib.loads((framework / 'Info.plist').read_bytes())
@@ -61,7 +61,7 @@ def build(work, module):
                  '-o', str(app / 'LifecycleTest')]
         compile_swift(args)
     (app / 'Info.plist').write_bytes(plistlib.dumps({
-        'CFBundleIdentifier': BUNDLE, 'CFBundleExecutable': 'LifecycleTest',
+        'CFBundleIdentifier': bundle, 'CFBundleExecutable': 'LifecycleTest',
         'CFBundleName': 'MPV Lifecycle Test', 'CFBundlePackageType': 'APPL',
         'CFBundleVersion': '1', 'CFBundleShortVersionString': '1.0',
         'MinimumOSVersion': '17.5', 'LSRequiresIPhoneOS': True,

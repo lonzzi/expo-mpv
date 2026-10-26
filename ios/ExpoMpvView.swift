@@ -134,6 +134,9 @@ class ExpoMpvView: ExpoView {
     metalLayer.contentsScale = UIScreen.main.nativeScale
     metalLayer.framebufferOnly = true
     metalLayer.backgroundColor = UIColor.black.cgColor
+    // UIKit can resize the layer before the VO presents a matching drawable.
+    // Keep that previous frame proportional during the intervening rotation frames.
+    metalLayer.contentsGravity = .resizeAspect
     metalLayer.pixelFormat = .bgra8Unorm
     metalLayer.device = MTLCreateSystemDefaultDevice()
     if metalLayer.device == nil {
@@ -1138,6 +1141,13 @@ class ExpoMpvView: ExpoView {
 // MARK: - MetalLayer
 
 private class MetalLayer: CAMetalLayer {
+  // MoltenVK resets this when it creates a swapchain. The old drawable can
+  // remain visible during UIKit rotation; stretching it would deform the video.
+  override var contentsGravity: CALayerContentsGravity {
+    get { super.contentsGravity }
+    set { super.contentsGravity = .resizeAspect }
+  }
+
   // Guard against MoltenVK 1×1 drawableSize bug
   override var drawableSize: CGSize {
     get { super.drawableSize }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.21
+
+- Keep the previous iOS Metal drawable proportional while rotating, including
+  after MoltenVK recreates its swapchain.
+- Reconfigure Android EGL buffers and the viewport when the Surface size changes,
+  and redraw the retained video frame while paused without reloading the source.
+- Add native playing/paused rotation regressions with rendered circle checks.
+
 ## 0.1.20
 
 ### Android
