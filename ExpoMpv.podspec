@@ -58,5 +58,6 @@ Pod::Spec.new do |s|
 
   # Bundle the CJK font for subtitle rendering
   # iOS 18+ system fonts use HVGL format which FreeType/libass cannot parse
-  s.resources = ['ios/Fonts/*.otf', 'ios/Fonts/*.ttf']
+  # Keep libass from treating the app executable, assets and frameworks as fonts.
+  s.resource_bundles = { 'ExpoMpvFonts' => ['ios/Fonts/*.otf', 'ios/Fonts/*.ttf'] }
 end

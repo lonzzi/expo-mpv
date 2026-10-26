@@ -13,6 +13,7 @@ import math
 from pathlib import Path
 import os
 import plistlib
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -25,7 +26,7 @@ import wave
 
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = 'expo.modules.mpv.command-regression'
-SCENARIOS = ['subtitle', 'pgs', 'audio', 'reload', 'replace', 'back', 'destroy', 'error']
+SCENARIOS = ['subtitle', 'pgs', 'audio', 'reload', 'replace', 'back', 'destroy', 'error', 'select', 'font']
 SUBTITLE = b'1\n00:00:00,000 --> 00:00:19,000\nExternal subtitle loaded\n'
 
 
@@ -50,6 +51,12 @@ def build(work):
     sources = ROOT / '__tests__/ios-commands'
     app = work / 'CommandRegression.app'
     app.mkdir()
+    fonts = app / 'ExpoMpvFonts.bundle'
+    fonts.mkdir()
+    (fonts / 'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier': BUNDLE + '.fonts'}))
+    shutil.copyfile(ROOT / 'ios/Fonts/NotoSansCJKsc-Regular.otf', fonts / 'NotoSansCJKsc-Regular.otf')
+    # A font directory must never include unrelated application payloads.
+    (app / 'font-scan-decoy.bin').write_bytes(b'not a font' * 1024 * 1024)
     with (work / 'build.log').open('w') as log:
         subprocess.run(base + ['-emit-library', '-static', '-emit-module', '-module-name',
             'ExpoModulesCore', str(sources / 'ExpoModulesCore.swift'), '-emit-module-path',
@@ -149,6 +156,8 @@ def serve():
 def validate(data):
     assert not data.get('preparationFailed'), 'Initial subtitle was not loaded'
     assert data['commandReturnSeconds'] < 0.35, 'Track command blocked its caller'
+    if data['scenario'] in ['select', 'font']:
+        assert data['commandReturnSeconds'] < 0.025, 'Subtitle selection/font work ran on the UI caller'
     assert data['maxMainThreadGapSeconds'] < 0.35, 'UI main queue stalled'
     events = {entry['event']: entry for entry in data['events']}
     assert data['completionCount'] == 1, 'Completion was lost or called more than once'
@@ -156,6 +165,8 @@ def validate(data):
     assert events['pause-return']['elapsed'] < 0.6 and data['paused'], 'Pause failed'
     errors = [entry for entry in data['events'] if entry['event'] == 'error']
     mode = data['scenario']
+    if mode in ['select', 'font']:
+        assert data['selectedSubtitle'] > 0, 'Async subtitle selection did not settle before completion'
     completion = events['load-completion']['elapsed']
     if mode in ['subtitle', 'pgs', 'audio', 'reload']:
         assert 3.9 <= completion < 5.5, 'Awaiters must wait for the real command result'

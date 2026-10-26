@@ -39,14 +39,21 @@ class ExpoMpvView: ExpoView {
   private struct PendingCommand {
     let name: String
     let completion: (() -> Void)?
+    let reportErrors: Bool
   }
   private var pendingCommands: [UInt64: PendingCommand] = [:]
   private var nextCommandID: UInt64 = 1
+  private var isUpdatingProperties: Bool {
+    pendingCommands.values.contains { $0.name == "set" }
+  }
 
   // MARK: - State
 
   private var isInitialized = false
-  private var pendingSource: String?
+  private var pendingSource: (url: String, startPosition: Double)?
+  // Apply source and startPosition together after all React props have arrived.
+  var sourceToLoad: String?
+  var startPosition: Double = 0
   private var pendingHwdec: String = "videotoolbox"
   private var progressTimer: Timer?
 
@@ -117,7 +124,7 @@ class ExpoMpvView: ExpoView {
     // Do not open the source against the zero-sized surface created by init.
     if window != nil, w > 1, h > 1, let source = pendingSource {
       pendingSource = nil
-      loadFile(source)
+      loadFile(source.url, startPosition: source.startPosition)
     }
   }
 
@@ -238,7 +245,7 @@ class ExpoMpvView: ExpoView {
     // Load pending source if any
     if let source = pendingSource {
       pendingSource = nil
-      loadFile(source)
+      loadFile(source.url, startPosition: source.startPosition)
     }
   }
 
@@ -288,7 +295,9 @@ class ExpoMpvView: ExpoView {
   }
 
   private func emitProgressEvent() {
-    guard mpv != nil else { return }
+    // Synchronous property reads would wait on the same core lock while an
+    // async subtitle/font update initializes libass. Refresh after its reply.
+    guard mpv != nil, !isUpdatingProperties else { return }
     let position = getDouble("time-pos")
     let duration = getDouble("duration")
     let cachedDuration = getDouble("demuxer-cache-duration")
@@ -329,6 +338,7 @@ class ExpoMpvView: ExpoView {
   /// Recompute state, drive the progress timer accordingly, and emit an event
   /// only when the state actually changes. Must run on the main thread.
   private func emitStateChange() {
+    guard !isUpdatingProperties else { return }
     let state = computeState()
 
     switch state {
@@ -374,8 +384,12 @@ class ExpoMpvView: ExpoView {
           let error = event.pointee.error
           self.dispatchEvent(for: handle) {
             guard let command = self.pendingCommands.removeValue(forKey: commandID) else { return }
-            self.reportCommandResult(command.name, result: error)
+            self.reportCommandResult(command.name, result: error, reportErrors: command.reportErrors)
             command.completion?()
+            if command.name == "set", !self.isUpdatingProperties {
+              self.emitStateChange()
+              self.emitProgressEvent()
+            }
           }
 
         case MPV_EVENT_LOG_MESSAGE:
@@ -460,6 +474,14 @@ class ExpoMpvView: ExpoView {
         case MPV_EVENT_SEEK:
           self.dispatchEvent(for: handle) {
             self.onSeek([:])
+          }
+
+        case MPV_EVENT_PLAYBACK_RESTART:
+          self.dispatchEvent(for: handle) {
+            // A paused load has no progress timer. Publish the decoded frame's
+            // actual position, including any HLS/keyframe adjustment.
+            self.emitProgressEvent()
+            self.emitStateChange()
           }
 
         default:
@@ -559,19 +581,27 @@ class ExpoMpvView: ExpoView {
 
   // MARK: - Public API
 
-  func loadFile(_ url: String) {
+  func loadSourceIfNeeded() {
+    guard let source = sourceToLoad else { return }
+    sourceToLoad = nil
+    loadFile(source, startPosition: startPosition)
+  }
+
+  func loadFile(_ url: String, startPosition: Double = 0) {
     cancelPendingCommands()
     guard isInitialized, mpv != nil, window != nil,
           bounds.width > 1, bounds.height > 1,
           metalLayer.drawableSize.width > 1, metalLayer.drawableSize.height > 1 else {
       log("loadFile deferred until the player surface is ready: \(url)")
-      pendingSource = url
+      pendingSource = (url, startPosition)
       return
     }
     log("loadFile: \(url)")
     hasSource = true
     setPropertyString("force-rgba-osd-rendering", "no")
-    command("loadfile", args: [url, "replace"])
+    let position = startPosition.isFinite ? max(0, startPosition) : 0
+    // Per-file options seek before the first frame and cannot leak to the next file.
+    command("loadfile", args: [url, "replace", "-1", "start=\(position)"])
     // Enter "loading" immediately. We force it here (rather than via
     // computeState) because right after loadfile mpv may still report the
     // previous file's flags (e.g. eof-reached), which would misfire "ended".
@@ -597,6 +627,7 @@ class ExpoMpvView: ExpoView {
   }
 
   func stop() {
+    sourceToLoad = nil
     pendingSource = nil
     cancelPendingCommands()
     command("stop")
@@ -640,6 +671,12 @@ class ExpoMpvView: ExpoView {
 
   func setSubtitleTrack(_ trackId: Int) {
     setInt("sid", Int64(trackId))
+  }
+
+  func setSubtitleTrackAsync(_ trackId: Int, completion: @escaping () -> Void) {
+    // Selecting a subtitle initializes libass and can read/parse fonts. The
+    // synchronous property API performs that work on the caller's UI thread.
+    commandAsync("set", args: ["sid", String(trackId)], reportErrors: false, completion: completion)
   }
 
   func setAudioTrack(_ trackId: Int) {
@@ -699,6 +736,10 @@ class ExpoMpvView: ExpoView {
       let errStr = String(cString: mpv_error_string(result))
       log("ERROR: set property string '\(name)'='\(value)' failed: \(errStr)")
     }
+  }
+
+  func setPropertyStringAsync(_ name: String, _ value: String, completion: @escaping () -> Void) {
+    commandAsync("set", args: [name, value], reportErrors: false, completion: completion)
   }
 
   func getPlaybackInfo() -> [String: Any] {
@@ -837,8 +878,17 @@ class ExpoMpvView: ExpoView {
 
     // Search in all bundles (the font is in the ExpoMpv pod bundle)
     var fontPath: String?
+    func bundledFont(in bundle: Bundle) -> String? {
+      if let url = bundle.url(forResource: "ExpoMpvFonts", withExtension: "bundle"),
+         let fonts = Bundle(url: url),
+         let path = fonts.path(forResource: fontFileName, ofType: fontFileExt) {
+        return path
+      }
+      // Support applications built before the dedicated font resource bundle.
+      return bundle.path(forResource: fontFileName, ofType: fontFileExt)
+    }
     for bundle in Bundle.allBundles {
-      if let path = bundle.path(forResource: fontFileName, ofType: fontFileExt) {
+      if let path = bundledFont(in: bundle) {
         fontPath = path
         break
       }
@@ -851,7 +901,7 @@ class ExpoMpvView: ExpoView {
         for item in contents where item.hasSuffix(".framework") {
           let bundlePath = frameworksPath + "/" + item
           if let bundle = Bundle(path: bundlePath),
-             let path = bundle.path(forResource: fontFileName, ofType: fontFileExt) {
+             let path = bundledFont(in: bundle) {
             fontPath = path
             break
           }
@@ -913,18 +963,18 @@ class ExpoMpvView: ExpoView {
 
   // External track commands can wait on HTTP/TLS for seconds. Queue the command
   // in libmpv and report its actual result via MPV_EVENT_COMMAND_REPLY instead.
-  private func commandAsync(_ command: String, args: [String] = [], completion: (() -> Void)? = nil) {
+  private func commandAsync(_ command: String, args: [String] = [], reportErrors: Bool = true, completion: (() -> Void)? = nil) {
     guard let mpv = mpv else {
       completion?()
       return
     }
     let commandID = nextCommandID
     nextCommandID += 1
-    pendingCommands[commandID] = PendingCommand(name: command, completion: completion)
+    pendingCommands[commandID] = PendingCommand(name: command, completion: completion, reportErrors: reportErrors)
     let result = withCommandArguments(command, args: args) { mpv_command_async(mpv, commandID, $0) }
     if result < 0 {
       pendingCommands.removeValue(forKey: commandID)
-      reportCommandResult(command, result: result)
+      reportCommandResult(command, result: result, reportErrors: reportErrors)
       completion?()
     }
   }
@@ -940,11 +990,11 @@ class ExpoMpvView: ExpoView {
     for command in commands.values { command.completion?() }
   }
 
-  private func reportCommandResult(_ command: String, result: Int32) {
+  private func reportCommandResult(_ command: String, result: Int32, reportErrors: Bool = true) {
     if result < 0 {
       let errStr = String(cString: mpv_error_string(result))
       log("ERROR: command '\(command)' failed: \(errStr) (\(result))")
-      onError(["error": "Command '\(command)' failed: \(errStr)"])
+      if reportErrors { onError(["error": "Command '\(command)' failed: \(errStr)"]) }
     } else {
       log("Command OK: \(command)")
     }

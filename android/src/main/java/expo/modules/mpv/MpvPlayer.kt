@@ -34,7 +34,11 @@ internal class MpvPlayer(
     @Volatile private var isDestroyed = false
 
     private var attachedSurface: Surface? = null
-    private var pendingSource: String? = null
+    private var videoVisible = true
+    private var videoOutputSuspended = false
+    private var videoOutput = "gpu"
+    private data class PendingSource(val url: String, val startPosition: Double)
+    private var pendingSource: PendingSource? = null
     private var pendingHwdec: String = if (isEmulator()) "no" else "mediacodec"
     private var progressRunnable: Runnable? = null
     private var lastProgressEmitPosition: Double = Double.NaN
@@ -81,23 +85,40 @@ internal class MpvPlayer(
     }
 
     fun setSurface(surface: Surface?) {
+        if (surface == null) {
+            // SurfaceHolder destroys the native window when its callback returns.
+            // Finish detaching on the player thread before that happens.
+            runOnPlayerThreadSync(Unit) {
+                attachedSurface = null
+                updateSurfaceLocked()
+            }
+            return
+        }
         runOnPlayerThread {
             if (isDestroyed) return@runOnPlayerThread
-            attachedSurface = surface?.takeIf { it.isValid }
+            attachedSurface = surface.takeIf { it.isValid }
             updateSurfaceLocked()
             maybeLoadPendingSourceLocked()
         }
     }
 
-    fun loadFile(url: String) {
+    fun setVideoVisible(visible: Boolean) {
         runOnPlayerThread {
-            if (!isPlayerReadyLocked()) {
-                pendingSource = url
-                return@runOnPlayerThread
+            videoVisible = visible
+            if (visible) {
+                restoreVideoOutputLocked()
+                maybeLoadPendingSourceLocked()
+            } else {
+                suspendVideoOutputLocked()
             }
+        }
+    }
 
-            pendingSource = null
-            commandLocked("loadfile", url, "replace")
+    fun loadFile(url: String, startPosition: Double = 0.0) {
+        runOnPlayerThread {
+            val position = if (startPosition.isFinite()) startPosition.coerceAtLeast(0.0) else 0.0
+            pendingSource = PendingSource(url, position)
+            maybeLoadPendingSourceLocked()
         }
     }
 
@@ -121,6 +142,7 @@ internal class MpvPlayer(
 
     fun stop() {
         runOnPlayerThread {
+            pendingSource = null
             commandLocked("stop")
         }
         stopProgressTimer()
@@ -226,6 +248,10 @@ internal class MpvPlayer(
 
     fun setPropertyString(name: String, value: String) {
         runOnPlayerThread {
+            if (name == "vo") {
+                videoOutput = value
+                if (videoOutputSuspended) return@runOnPlayerThread
+            }
             setPropertyStringLocked(name, value)
         }
     }
@@ -353,6 +379,13 @@ internal class MpvPlayer(
                 }
             }
 
+            MPVLib.EVENT_PLAYBACK_RESTART -> {
+                runOnPlayerThread {
+                    refreshCachedPlaybackSnapshotLocked()
+                    dispatchOnMain { emitProgressEvent(force = true) }
+                }
+            }
+
             MPVLib.EVENT_SHUTDOWN -> {
                 isInitialized = false
                 stopProgressTimer()
@@ -448,7 +481,7 @@ internal class MpvPlayer(
         // a track is active does not resize libass's existing caches.
         MPVLib.nativeSetOptionString(nativePtr, "sub-glyph-limit", "100000")
         MPVLib.nativeSetOptionString(nativePtr, "sub-bitmap-max-size", "512")
-        MPVLib.nativeSetOptionString(nativePtr, "vo", "gpu")
+        MPVLib.nativeSetOptionString(nativePtr, "vo", videoOutput)
         MPVLib.nativeSetOptionString(nativePtr, "gpu-context", "android")
         MPVLib.nativeSetOptionString(nativePtr, "opengl-es", "yes")
         MPVLib.nativeSetOptionString(nativePtr, "hwdec", pendingHwdec)
@@ -493,6 +526,8 @@ internal class MpvPlayer(
 
         if (surface == null || !surface.isValid) {
             if (isInitialized) {
+                // Stop using the old native window before releasing its JNI reference.
+                suspendVideoOutputLocked()
                 MPVLib.nativeDetachSurface(ptr)
             }
             return
@@ -504,6 +539,23 @@ internal class MpvPlayer(
         } else {
             MPVLib.nativeReattachSurface(ptr, surface)
         }
+        if (videoVisible) restoreVideoOutputLocked() else suspendVideoOutputLocked()
+    }
+
+    private fun suspendVideoOutputLocked() {
+        if (!isInitialized || videoOutputSuspended) return
+        setPropertyStringLocked("vo", "null")
+        setPropertyStringLocked("force-window", "no")
+        videoOutputSuspended = true
+    }
+
+    private fun restoreVideoOutputLocked() {
+        // Window visibility can arrive before surfaceCreated. Recreating GPU
+        // output earlier opens an invalid window and permanently deselects video.
+        if (!isInitialized || !videoVisible || attachedSurface?.isValid != true || !videoOutputSuspended) return
+        setPropertyStringLocked("force-window", "yes")
+        setPropertyStringLocked("vo", videoOutput)
+        videoOutputSuspended = false
     }
 
     private fun initializeMpvLocked(): Boolean {
@@ -544,11 +596,11 @@ internal class MpvPlayer(
 
         pendingSource = null
         setPropertyStringLocked("force-rgba-osd-rendering", "no")
-        commandLocked("loadfile", source, "replace")
+        commandLocked("loadfile", source.url, "replace", "-1", "start=${source.startPosition}")
     }
 
     private fun isPlayerReadyLocked(): Boolean {
-        return nativePtr != 0L && isInitialized && attachedSurface?.isValid == true
+        return nativePtr != 0L && isInitialized && videoVisible && attachedSurface?.isValid == true
     }
 
     private fun refreshCachedPlaybackSnapshotLocked() {
@@ -620,8 +672,8 @@ internal class MpvPlayer(
         lastProgressEmitBufferedDuration = Double.NaN
     }
 
-    private fun emitProgressEvent() {
-        if (isDestroyed || !isInitialized || cachedPause || attachedSurface?.isValid != true) return
+    private fun emitProgressEvent(force: Boolean = false) {
+        if (isDestroyed || !isInitialized || (cachedPause && !force) || attachedSurface?.isValid != true) return
 
         val position = cachedTimePos
         val duration = cachedDuration
@@ -635,7 +687,7 @@ internal class MpvPlayer(
             lastProgressEmitBufferedDuration.isNaN() ||
                 kotlin.math.abs(bufferedDuration - lastProgressEmitBufferedDuration) >= 0.25
 
-        if (!positionChangedEnough && !durationChanged && !bufferedChangedEnough) {
+        if (!force && !positionChangedEnough && !durationChanged && !bufferedChangedEnough) {
             return
         }
 

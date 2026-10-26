@@ -39,6 +39,8 @@ class ProbeController: UIViewController {
   private var retired: [WeakView] = []
   private var created = 0
   private var loaded = 0
+  private var firstPositions: [Double] = []
+  private var expectedPositions: [Double] = []
   private var errors: [[String: Any]] = []
   private let status = UILabel()
   private let cycleCount: Int = {
@@ -68,18 +70,58 @@ class ProbeController: UIViewController {
     let cycle = created
     status.text = "Player lifecycle \(cycle) / \(cycleCount)"
     current.frame = CGRect(x: 0, y: 100, width: view.bounds.width, height: 400)
-    view.addSubview(current)
+    let start = cycle.isMultiple(of: 3) ? 0.0 : 2.375
+    expectedPositions.append(start)
+    let startsPaused = cycle.isMultiple(of: 2)
+    if startsPaused { current.pause() }
+    var receivedProgress = false
+    current.onProgress.handler = { [weak self, weak current] data in
+      guard let self, let current, self.player === current, !receivedProgress,
+            let position = data["position"] as? Double else { return }
+      receivedProgress = true
+      if startsPaused { return }
+      self.firstPositions.append(position)
+      current.pause()
+      current.play()
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.retire(cycle: cycle) }
+    }
     current.onLoad.handler = { [weak self, weak current] _ in
       guard let self, let current, self.player === current else { return }
       self.loaded += 1
       current.setLooping(true)
       current.setPropertyString("sub-use-margins", "no")
-      current.pause()
-      current.play()
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.retire(cycle: cycle) }
+      if startsPaused {
+        // Paused players intentionally stop progress events; inspect their decoded frame.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self, weak current] in
+          guard let self, let current, self.player === current else { return }
+          let info = current.getPlaybackInfo()
+          if !receivedProgress {
+            self.errors.append(["error": "Paused load did not publish its initial position"])
+          }
+          self.firstPositions.append(info["position"] as? Double ?? -1)
+          if info["isPlaying"] as? Bool != false {
+            self.errors.append(["error": "Paused load started playing"])
+          }
+          current.play()
+          DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.retire(cycle: cycle) }
+        }
+      }
     }
     current.onError.handler = { [weak self] data in self?.errors.append(data) }
-    current.loadFile(Bundle.main.url(forResource: "fixture", withExtension: "mp4")!.path)
+    // Alternate prop order and load before attaching to exercise deferred surfaces.
+    let path = Bundle.main.url(forResource: "fixture", withExtension: "mp4")!.path
+    if startsPaused {
+      current.startPosition = start
+      current.sourceToLoad = path
+    } else {
+      current.sourceToLoad = path
+      current.startPosition = start
+    }
+    current.loadSourceIfNeeded()
+    // A later startPosition-only update must neither reload nor change a deferred load.
+    current.startPosition = 1
+    current.loadSourceIfNeeded()
+    view.addSubview(current)
     writeResult(finished: false)
   }
 
@@ -102,6 +144,7 @@ class ProbeController: UIViewController {
       "finished": finished, "requested": cycleCount, "created": created,
       "loaded": loaded, "retired": retired.count,
       "retainedViews": retired.filter { $0.value != nil }.count, "errors": errors,
+      "firstPositions": firstPositions, "expectedPositions": expectedPositions,
     ]
     let data = try! JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
     let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

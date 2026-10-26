@@ -154,15 +154,16 @@ const media = await playerRef.current?.getMediaInfo();
 
 ### Props
 
-| Prop     | Type      | Description                                                                         |
-| -------- | --------- | ----------------------------------------------------------------------------------- |
-| `source` | `string`  | Media URL or local file path                                                        |
-| `paused` | `boolean` | Pause/resume playback                                                               |
-| `speed`  | `number`  | Playback speed (default: 1.0)                                                       |
-| `volume` | `number`  | Volume 0-100 (default: 100)                                                         |
-| `muted`  | `boolean` | Mute audio                                                                          |
-| `loop`   | `boolean` | Loop current file                                                                   |
-| `hwdec`  | `string`  | Hardware decode mode. Defaults to `videotoolbox` on iOS and `mediacodec` on Android |
+| Prop            | Type      | Description                                                                              |
+| --------------- | --------- | ---------------------------------------------------------------------------------------- |
+| `source`        | `string`  | Media URL or local file path                                                             |
+| `startPosition` | `number`  | Initial position in seconds (default: 0), applied with the source before its first frame |
+| `paused`        | `boolean` | Pause/resume playback                                                                    |
+| `speed`         | `number`  | Playback speed (default: 1.0)                                                            |
+| `volume`        | `number`  | Volume 0-100 (default: 100)                                                              |
+| `muted`         | `boolean` | Mute audio                                                                               |
+| `loop`          | `boolean` | Loop current file                                                                        |
+| `hwdec`         | `string`  | Hardware decode mode. Defaults to `videotoolbox` on iOS and `mediacodec` on Android      |
 
 ### Events
 
@@ -229,6 +230,25 @@ This is a known issue across the ecosystem:
 - [arthenica/ffmpeg-kit#1001](https://github.com/arthenica/ffmpeg-kit/issues/1001) — ffmpeg-kit iOS 18 subtitle issue
 
 The bundled Noto Sans CJK SC Regular (~16MB) covers Simplified Chinese, Traditional Chinese, Japanese, and Korean. It uses the [SIL Open Font License](https://openfontlicense.org/), which permits free use, embedding, and redistribution.
+
+On iOS, these resources are stored in `ExpoMpvFonts.bundle`. Applications that
+copy the bundled font into their own cache should read it from that resource
+bundle rather than the application bundle's root.
+
+## Android background regression
+
+With a compiled Expo development host containing this module and
+`expo-splash-screen`, start its Metro server and run:
+
+```bash
+bun run test:android-background --project /path/to/host --device emulator-5554
+```
+
+The runner requires `adb` and `ffmpeg`. It uses an app-private seekable video,
+checks pause/position preservation and moving video after real background
+transitions, and verifies that the process and source were retained. Generated
+entries are removed afterwards; screenshots and logs stay in a temporary folder.
+Use `--bundle-id`, `--scheme`, `--adb-port`, and `--metro-port` for a different host.
 
 ## Architecture
 

@@ -166,6 +166,11 @@ export type ExpoMpvViewProps = {
    */
   source?: string;
 
+  /** Initial position in seconds, applied when loading a source before its first frame.
+   * Changing this alone does not seek; use seekTo for an already loaded source.
+   */
+  startPosition?: number;
+
   /**
    * Whether playback is paused.
    */

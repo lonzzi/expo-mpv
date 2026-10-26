@@ -77,8 +77,8 @@ class ProbeController: UIViewController {
       self.didRun = true
       self.player.setLooping(true)
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-        if self.mode == "reload" {
-          self.player.addSubtitle(self.url("reload.srt"), title: "Reload subtitle")
+        if ["reload", "select", "font"].contains(self.mode) {
+          self.player.addSubtitle(self.url("reload.srt"), flag: self.mode == "select" ? "cached" : "select", title: "Reload subtitle")
           self.waitForSubtitle(attempt: 0)
         } else {
           self.runScenario()
@@ -111,7 +111,18 @@ class ProbeController: UIViewController {
       self.record("load-completion")
       self.metrics["completionCount"] = (self.metrics["completionCount"] as? Int ?? 0) + 1
     }
-    if mode == "audio" {
+    if mode == "select" {
+      let id = player.getTrackList().first { $0["type"] as? String == "sub" }?["id"] as? Int ?? -1
+      player.setSubtitleTrackAsync(id) {
+        self.metrics["selectedSubtitle"] = self.player.getCurrentTrackIds()["sid"]
+        completion()
+      }
+    } else if mode == "font" {
+      player.setPropertyStringAsync("sub-font", "Noto Sans CJK SC") {
+        self.metrics["selectedSubtitle"] = self.player.getCurrentTrackIds()["sid"]
+        completion()
+      }
+    } else if mode == "audio" {
       player.addAudio(url("slow.wav"), flag: "auto", title: "Slow audio", completion: completion)
     } else if mode == "reload" {
       player.reloadSubtitles(completion: completion)
@@ -166,7 +177,7 @@ class ProbeController: UIViewController {
         self.record("replace-return")
       }
     }
-    if ["subtitle", "pgs", "audio", "reload", "error"].contains(mode) {
+    if ["subtitle", "pgs", "audio", "reload", "error", "select", "font"].contains(mode) {
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
         self.record("resume-handler")
         self.player.play()

@@ -124,7 +124,11 @@ def main():
         assert data.get('finished'), f'No final result (crash or stalled player): {data}'
         assert data['created'] == data['loaded'] == data['retired'] == args.cycles, data
         assert data['retainedViews'] == 0 and not data['errors'], data
+        assert len(data['firstPositions']) == args.cycles, data
+        for actual, expected in zip(data['firstPositions'], data['expectedPositions']):
+            assert expected - 0.05 <= actual < expected + 1, (actual, expected)
         print(f"PASS: {args.cycles} loaded/retired players, no retained views or playback errors")
+        print('PASS: first progress starts at the requested position, including paused/deferred loads')
     except Exception:
         log = work / 'build.log'
         if log.exists():

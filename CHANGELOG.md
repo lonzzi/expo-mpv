@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.1.20
+
+### Android
+
+- Restore video output only after the replacement Surface is attached when
+  returning from the background. Suspend the old output before detaching it,
+  preserving the playback position and pause state instead of leaving audio-only playback.
+- Add a native background regression runner that checks repeated paused and
+  playing Activity transitions, actual rendered frames, progress, and source continuity.
+
+### iOS
+
+- Apply subtitle selection and property updates asynchronously, and wait for
+  their completion without blocking the main thread during font initialization.
+- Package bundled subtitle fonts in `ExpoMpvFonts.bundle` so libass does not
+  scan unrelated application resources as font files.
+
+### Playback
+
+- Add `startPosition`, applied together with the source before its first frame
+  on both platforms. Continuing playback no longer requires a seek after loading.
+- Publish the initial position after a paused playback restart as well.
+
 ## 0.1.16
 
 ### Android

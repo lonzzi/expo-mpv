@@ -39,9 +39,15 @@ public class ExpoMpvModule: Module {
       // MARK: - Props
 
       Prop("source") { (view: ExpoMpvView, source: String?) in
-        if let source = source {
-          view.loadFile(source)
-        }
+        view.sourceToLoad = source
+      }
+
+      Prop("startPosition") { (view: ExpoMpvView, position: Double?) in
+        view.startPosition = position ?? 0
+      }
+
+      OnViewDidUpdateProps { (view: ExpoMpvView) in
+        view.loadSourceIfNeeded()
       }
 
       Prop("paused") { (view: ExpoMpvView, paused: Bool) in
@@ -112,8 +118,8 @@ public class ExpoMpvModule: Module {
         view.setMuted(muted)
       }.runOnQueue(.main)
 
-      AsyncFunction("setSubtitleTrack") { (view: ExpoMpvView, trackId: Int) in
-        view.setSubtitleTrack(trackId)
+      AsyncFunction("setSubtitleTrack") { (view: ExpoMpvView, trackId: Int, promise: Promise) in
+        view.setSubtitleTrackAsync(trackId) { promise.resolve() }
       }.runOnQueue(.main)
 
       AsyncFunction("setAudioTrack") { (view: ExpoMpvView, trackId: Int) in
@@ -144,8 +150,8 @@ public class ExpoMpvModule: Module {
         view.setSubtitleDelay(seconds)
       }.runOnQueue(.main)
 
-      AsyncFunction("setPropertyString") { (view: ExpoMpvView, name: String, value: String) in
-        view.setPropertyString(name, value)
+      AsyncFunction("setPropertyString") { (view: ExpoMpvView, name: String, value: String, promise: Promise) in
+        view.setPropertyStringAsync(name, value) { promise.resolve() }
       }.runOnQueue(.main)
 
       AsyncFunction("getPlaybackInfo") { (view: ExpoMpvView) -> [String: Any] in

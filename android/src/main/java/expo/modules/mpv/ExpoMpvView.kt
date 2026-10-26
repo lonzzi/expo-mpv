@@ -22,6 +22,8 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
     override val shouldUseAndroidLayout = true
 
     private var isDestroyed = false
+    var sourceToLoad: String? = null
+    var startPosition: Double = 0.0
 
     private val surfaceView = SurfaceView(context).apply {
         layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
@@ -117,11 +119,7 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
 
     override fun onWindowVisibilityChanged(visibility: Int) {
         super.onWindowVisibilityChanged(visibility)
-        if (visibility == View.GONE || visibility == View.INVISIBLE) {
-            player.setPropertyString("vid", "no")
-        } else {
-            player.setPropertyString("vid", "auto")
-        }
+        player.setVideoVisible(visibility == View.VISIBLE)
     }
 
     fun destroy() {
@@ -132,8 +130,10 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
         player.release()
     }
 
-    fun loadFile(url: String) {
-        player.loadFile(url)
+    fun loadSourceIfNeeded() {
+        val source = sourceToLoad ?: return
+        sourceToLoad = null
+        player.loadFile(source, startPosition)
     }
 
     fun play() {
@@ -149,6 +149,7 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
     }
 
     fun stop() {
+        sourceToLoad = null
         player.stop()
     }
 

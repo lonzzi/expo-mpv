@@ -30,9 +30,15 @@ class ExpoMpvModule : Module() {
 
             // Props (same as iOS)
             Prop("source") { view: ExpoMpvView, source: String? ->
-                if (source != null) {
-                    view.loadFile(source)
-                }
+                view.sourceToLoad = source
+            }
+
+            Prop("startPosition") { view: ExpoMpvView, position: Double? ->
+                view.startPosition = position ?: 0.0
+            }
+
+            OnViewDidUpdateProps { view: ExpoMpvView ->
+                view.loadSourceIfNeeded()
             }
 
             Prop("paused") { view: ExpoMpvView, paused: Boolean ->
