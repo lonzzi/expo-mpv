@@ -8,17 +8,25 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 /** The service holds the active engine, independently of its video Surface. */
 class ExpoMpvPlaybackService : Service() {
@@ -82,6 +90,11 @@ class ExpoMpvPlaybackService : Service() {
     private var hasFocus = false
     private var resumeAfterFocus = false
     private var foreground = false
+    private var artworkUri: String? = null
+    private var artwork: Bitmap? = null
+    private val artworkExecutor = Executors.newSingleThreadExecutor()
+    private var artworkTask: Future<*>? = null
+    private var artworkGeneration = 0
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
@@ -140,6 +153,7 @@ class ExpoMpvPlaybackService : Service() {
 
     private fun publish() {
         val player = owner ?: return
+        updateArtwork(metadata["artwork"]?.takeIf { it.isNotBlank() })
         val playing = player.sessionPlaying
         val title = metadata["title"]?.takeIf { it.isNotBlank() }
             ?: applicationInfo.loadLabel(packageManager).toString()
@@ -149,6 +163,8 @@ class ExpoMpvPlaybackService : Service() {
             .putString(MediaMetadata.METADATA_KEY_ARTIST, metadata["artist"])
             .putString(MediaMetadata.METADATA_KEY_ALBUM, metadata["albumTitle"])
             .putLong(MediaMetadata.METADATA_KEY_DURATION, player.sessionDuration)
+            .putBitmap(MediaMetadata.METADATA_KEY_ART, artwork)
+            .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artwork)
             .build())
         session.setPlaybackState(PlaybackState.Builder()
             .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
@@ -165,6 +181,7 @@ class ExpoMpvPlaybackService : Service() {
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setOngoing(playing)
+            .setLargeIcon(artwork)
             .setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken).setShowActionsInCompactView(0))
             .addAction(Notification.Action.Builder(
                 if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
@@ -182,6 +199,60 @@ class ExpoMpvPlaybackService : Service() {
         // Android 15 requires a foreground app/service before requesting focus.
         if (playing && !hasFocus && !resumeAfterFocus) requestFocus()
         if (!playing && hasFocus && !resumeAfterFocus) abandonFocus()
+    }
+
+    private fun updateArtwork(uri: String?) {
+        if (artworkUri == uri) return
+        artworkUri = uri
+        artwork = null
+        artworkTask?.cancel(true)
+        val generation = ++artworkGeneration
+        if (uri == null) return
+        artworkTask = artworkExecutor.submit {
+            val image = try { loadArtwork(uri) } catch (_: Exception) { null }
+            handler.post {
+                // A slow image from a retired episode must not replace its successor.
+                if (instance === this && generation == artworkGeneration && owner != null) {
+                    artwork = image
+                    publish()
+                }
+            }
+        }
+    }
+
+    private fun loadArtwork(value: String): Bitmap? {
+        val uri = Uri.parse(value)
+        val connection = if (uri.scheme == "http" || uri.scheme == "https") {
+            (URL(value).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 5000
+                readTimeout = 5000
+            }
+        } else null
+        val bytes = try {
+            val input = if (connection != null) connection.inputStream
+                else if (uri.scheme == "file" || uri.scheme == "content") contentResolver.openInputStream(uri)
+                else null
+            input?.use { stream ->
+                val result = ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                while (true) {
+                    if (Thread.currentThread().isInterrupted) return null
+                    val count = stream.read(buffer)
+                    if (count < 0) break
+                    if (result.size() + count > 8 * 1024 * 1024) return null
+                    result.write(buffer, 0, count)
+                }
+                result.toByteArray()
+            } ?: return null
+        } finally { connection?.disconnect() }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options().apply { inSampleSize = 1 }
+        while (maxOf(bounds.outWidth, bounds.outHeight) / options.inSampleSize > 512) {
+            options.inSampleSize *= 2
+        }
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
     }
 
     @Suppress("DEPRECATION")
@@ -206,6 +277,10 @@ class ExpoMpvPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        artworkGeneration++
+        artworkTask?.cancel(true)
+        artworkExecutor.shutdownNow()
+        artwork = null
         if (instance === this) {
             instance = null
             owner?.pause()

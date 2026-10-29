@@ -71,13 +71,17 @@ There is no separate Android setup script to run.
 
 ### Background audio and system controls
 
-Enable `showNotificationControls` on the player and provide text metadata:
+Enable `showNotificationControls` on the player and provide metadata:
 
 ```tsx
 <ExpoMpvView
   source={source}
   showNotificationControls
-  metadata={{ title: 'Episode title', artist: 'Series title' }}
+  metadata={{
+    title: 'Episode title',
+    artist: 'Series title',
+    artwork: 'https://example.com/episode-cover.jpg',
+  }}
 />
 ```
 

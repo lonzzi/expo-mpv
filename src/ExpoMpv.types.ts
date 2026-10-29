@@ -177,8 +177,14 @@ export type ExpoMpvViewProps = {
    */
   showNotificationControls?: boolean;
 
-  /** Text displayed by the system media controls. Never pass a credentialed source URL. */
-  metadata?: { title?: string; artist?: string; albumTitle?: string };
+  /** Metadata displayed by the system media controls. Never pass a credentialed source URL. */
+  metadata?: {
+    title?: string;
+    artist?: string;
+    albumTitle?: string;
+    /** Artwork URL or file URI. Loaded asynchronously and resized natively. */
+    artwork?: string;
+  };
 
   /**
    * Whether playback is paused.

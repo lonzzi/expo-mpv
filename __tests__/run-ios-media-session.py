@@ -4,6 +4,8 @@
 After --prepare, use Simulator controls to go Home and reopen the app a few
 times, then run --verify against the same output folder. Requires a booted
 simulator; this runner does not start or control the user's Simulator UI.
+Artwork fixtures require ffmpeg and cwebp. To test HTTP loading, launch with
+EXPO_MPV_ARTWORK_BASE_URL pointing to a local server serving the app's fixtures.
 """
 import argparse
 import importlib.util
@@ -35,7 +37,13 @@ def main():
         app = lifecycle.build(work, ROOT, ROOT / '__tests__/ios-media-session/App.swift', BUNDLE)
         info = plistlib.loads((app / 'Info.plist').read_bytes())
         info['UIBackgroundModes'] = ['audio']
+        info['NSAppTransportSecurity'] = {'NSAllowsLocalNetworking': True}
         (app / 'Info.plist').write_bytes(plistlib.dumps(info))
+        for name, size in [('artwork', '1200x600'), ('artwork-next', '600x1200')]:
+            png = work / f'{name}.png'
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i',
+                            f'testsrc2=size={size}', '-frames:v', '1', str(png)], check=True)
+            subprocess.run(['cwebp', '-quiet', str(png), '-o', str(app / f'{name}.webp')], check=True)
         subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30',
                         '-f', 'lavfi', '-i', 'sine=frequency=660:sample_rate=48000', '-t', '120', '-c:v',
                         'libx264', '-preset', 'ultrafast', '-crf', '30', '-c:a', 'aac', str(app / 'fixture.mp4')], check=True)
@@ -54,7 +62,7 @@ def main():
             break
         time.sleep(.25)
     (work / 'media-session.json').write_text(json.dumps(data, indent=2) + '\n')
-    assert data['loads'] == 1 and not data['errors'] and data['interruptionChecked'], data
+    assert data['loads'] == 1 and not data['errors'] and data['interruptionChecked'] and data['artworkChecked'], data
     samples = data['samples']
     runs = []
     for sample in samples:
@@ -74,7 +82,8 @@ def main():
     last = samples[-1]
     assert last['state'] == 0 and last['playing'] and last['title'] == 'Background episode', last
     result = {'passed': True, 'backgroundRuns': len(runs), 'singleSourceLoad': data['loads'],
-              'syntheticInterruptionResume': data['interruptionChecked'], 'last': last}
+              'syntheticInterruptionResume': data['interruptionChecked'],
+              'artworkLoadedResizedAndReplaced': data['artworkChecked'], 'last': last}
     (work / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))
 

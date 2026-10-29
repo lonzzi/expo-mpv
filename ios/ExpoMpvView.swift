@@ -3,6 +3,7 @@ import Libmpv
 import CoreText
 import AVFoundation
 import MediaPlayer
+import ImageIO
 
 class ExpoMpvView: ExpoView {
   // MARK: - Metal Layer
@@ -1176,6 +1177,10 @@ private final class ExpoMpvNowPlayingController {
   private var commands: [(MPRemoteCommand, Any)] = []
   private var observers: [NSObjectProtocol] = []
   private var resumeAfterInterruption = false
+  private var artworkURL: String?
+  private var artworkTask: URLSessionDownloadTask?
+  private var artwork: MPMediaItemArtwork?
+  private var latestInfo: [String: Any] = [:]
 
   init(player: ExpoMpvView) {
     self.player = player
@@ -1236,11 +1241,12 @@ private final class ExpoMpvNowPlayingController {
 
   func update(metadata: [String: String], playback: [String: Any], ended: Bool) {
     guard Self.owner === self else { return }
+    updateArtwork(metadata["artwork"])
     let playing = playback["isPlaying"] as? Bool == true && !ended
     let position = playback["position"] as? Double ?? 0
     let duration = playback["duration"] as? Double ?? 0
     let speed = playback["speed"] as? Double ?? 1
-    MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+    latestInfo = [
       MPMediaItemPropertyTitle: metadata["title"] ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Media",
       MPMediaItemPropertyArtist: metadata["artist"] ?? "",
       MPMediaItemPropertyAlbumTitle: metadata["albumTitle"] ?? "",
@@ -1250,9 +1256,65 @@ private final class ExpoMpvNowPlayingController {
       MPNowPlayingInfoPropertyDefaultPlaybackRate: speed,
       MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.video.rawValue,
     ]
+    latestInfo[MPMediaItemPropertyArtwork] = artwork
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = latestInfo
     // Also publish explicit state for Simulator/Mac Catalyst, where the system
     // cannot infer native AudioUnit playback from a physical audio session.
     MPNowPlayingInfoCenter.default().playbackState = playing ? .playing : .paused
+  }
+
+  private func updateArtwork(_ value: String?) {
+    let value = value?.isEmpty == false ? value : nil
+    guard artworkURL != value else { return }
+    artworkURL = value
+    artwork = nil
+    artworkTask?.cancel()
+    guard let value, let url = URL(string: value),
+          ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else { return }
+    if url.isFileURL {
+      DispatchQueue.global(qos: .utility).async { [weak self] in
+        if let image = Self.loadArtwork(url) { self?.publishArtwork(image, url: value) }
+      }
+      return
+    }
+    var request = URLRequest(url: url)
+    request.timeoutInterval = 10
+    artworkTask = URLSession.shared.downloadTask(with: request) { [weak self] file, response, error in
+      guard error == nil, let file,
+            (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
+            let image = Self.loadArtwork(file) else { return }
+      self?.publishArtwork(image, url: value)
+    }
+    artworkTask?.resume()
+  }
+
+  private static func loadArtwork(_ file: URL) -> UIImage? {
+    guard let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
+          let size = attributes[.size] as? NSNumber, size.intValue <= 8 * 1024 * 1024,
+          let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+          let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 512,
+          ] as CFDictionary) else { return nil }
+    return UIImage(cgImage: image)
+  }
+
+  private func publishArtwork(_ image: UIImage, url: String) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self, Self.owner === self, self.artworkURL == url else { return }
+      let artwork = MPMediaItemArtwork(boundsSize: image.size) { requested in
+        guard requested.width > 0, requested.height > 0 else { return image }
+        let ratio = min(1, requested.width / image.size.width, requested.height / image.size.height)
+        let size = CGSize(width: image.size.width * ratio, height: image.size.height * ratio)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+          image.draw(in: CGRect(origin: .zero, size: size))
+        }
+      }
+      self.artwork = artwork
+      self.latestInfo[MPMediaItemPropertyArtwork] = artwork
+      MPNowPlayingInfoCenter.default().nowPlayingInfo = self.latestInfo
+    }
   }
 
   private func interrupted(_ notification: Notification) {
@@ -1274,6 +1336,11 @@ private final class ExpoMpvNowPlayingController {
   func cancelInterruptionResume() { resumeAfterInterruption = false }
 
   func invalidate() {
+    artworkTask?.cancel()
+    artworkTask = nil
+    artworkURL = nil
+    artwork = nil
+    latestInfo = [:]
     commands.forEach { $0.0.removeTarget($0.1) }
     commands.removeAll()
     observers.forEach { NotificationCenter.default.removeObserver($0) }

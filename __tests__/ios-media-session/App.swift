@@ -29,17 +29,20 @@ class MediaProbeController: UIViewController {
   private var loads = 0
   private var timer: Timer?
   private var interruptionChecked = false
+  private var artworkChecked = false
 
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .black
     player.showNotificationControls = true
-    player.metadata = ["title": "Background episode", "artist": "NekoFin regression"]
+    player.metadata = ["title": "Background episode", "artist": "NekoFin regression",
+                       "artwork": artworkURL("artwork")]
     player.onLoad.handler = { [weak self] _ in
       guard let self else { return }
       self.loads += 1
       self.player.setLooping(true)
       DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.checkInterruption() }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.checkArtwork() }
     }
     player.onError.handler = { [weak self] error in self?.errors.append(String(describing: error)) }
     view.addSubview(player)
@@ -96,12 +99,43 @@ class MediaProbeController: UIViewController {
       "rate": now[MPNowPlayingInfoPropertyPlaybackRate] ?? -1,
       "audioCategory": AVAudioSession.sharedInstance().category.rawValue,
       "audioOptions": AVAudioSession.sharedInstance().categoryOptions.rawValue,
+      "artworkWidth": (now[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork)?.bounds.width ?? 0,
+      "artworkHeight": (now[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork)?.bounds.height ?? 0,
     ])
     if samples.count > 1200 { samples.removeFirst() }
     let result: [String: Any] = ["loads": loads, "errors": errors, "samples": samples,
-                               "interruptionChecked": interruptionChecked]
+                               "interruptionChecked": interruptionChecked, "artworkChecked": artworkChecked]
     let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("media-session.json")
     try? JSONSerialization.data(withJSONObject: result).write(to: url, options: .atomic)
+  }
+
+  private func checkArtwork() {
+    let artwork = MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork
+    if artwork?.bounds.width != 512 || artwork?.bounds.height != 256 {
+      errors.append("Artwork was not loaded and resized in Now Playing")
+    }
+    player.metadata.removeValue(forKey: "artwork")
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+      if MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork] != nil {
+        self.errors.append("Removing artwork left the previous cover in Now Playing")
+      }
+      self.player.metadata["artwork"] = self.artworkURL("artwork-next")
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+        let next = MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork] as? MPMediaItemArtwork
+        if next?.bounds.width != 256 || next?.bounds.height != 512 {
+          self.errors.append("Now Playing retained the old artwork after a metadata change")
+        }
+        self.artworkChecked = true
+      }
+    }
+  }
+
+  private func artworkURL(_ name: String) -> String {
+    if let base = ProcessInfo.processInfo.environment["EXPO_MPV_ARTWORK_BASE_URL"],
+       let url = URL(string: base) {
+      return url.appendingPathComponent(name + ".webp").absoluteString
+    }
+    return Bundle.main.url(forResource: name, withExtension: "webp")!.absoluteString
   }
 }
