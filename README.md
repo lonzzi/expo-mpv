@@ -13,6 +13,7 @@ On iOS it uses [MPVKit](https://github.com/mpvkit/MPVKit). On Android it integra
 - Runtime hardware decode selection (`videotoolbox` / `mediacodec` / software)
 - Media info inspection: codec, resolution, fps, bitrate, hwdec status, pixel format, colorspace
 - Play/pause, seek, speed, volume, mute, loop
+- Optional native media notifications and lock-screen controls, with an Android playback foreground service
 - Unified playback state machine (`idle / loading / playing / paused / buffering / ended`)
 - Buffering stats: buffered position (for the seek bar), download rate, cache fill %
 - HDR / Dolby Vision detection + libplacebo tone-mapping on iOS (`onHdrStateChange`)
@@ -67,6 +68,31 @@ npx expo prebuild
 - Android: Gradle downloads the `libmpv` native libraries automatically before build
 
 There is no separate Android setup script to run.
+
+### Background audio and system controls
+
+Enable `showNotificationControls` on the player and provide text metadata:
+
+```tsx
+<ExpoMpvView
+  source={source}
+  showNotificationControls
+  metadata={{ title: 'Episode title', artist: 'Series title' }}
+/>
+```
+
+On iOS, add `ios.infoPlist.UIBackgroundModes: ["audio"]` to the Expo app config.
+The player publishes Now Playing information, handles native play/pause/seek
+commands, and pauses for audio interruptions or a disconnected audio route.
+On Android, the module declares a `mediaPlayback` foreground service and its
+permissions. Start playback from a visible app so Android permits the service
+to start. The service publishes a media notification and handles audio focus.
+No separate notification permission prompt is required for the media session.
+
+System controls call the active native engine directly, including while the JS
+thread is suspended. They are removed when the player stops or is unmounted.
+The host still owns episode selection: defer navigation and creation of a new
+video view until the app is active. This API does not provide a native playlist.
 
 ASS/SSA rendering uses a patched libass that keeps disconnected drawing contours
 in compact masks, skips offscreen drawings and shares unfiltered bitmap storage.
@@ -243,6 +269,19 @@ With a compiled Expo development host containing this module,
 ```bash
 bun run test:android-background --project /path/to/host --device emulator-5554
 ```
+
+For native media controls and service lifecycle, build the example Android host
+once, then run `python3 __tests__/run-android-media-session.py --device emulator-5554`.
+It uses the production engine, JNI bridge and service with an isolated test
+Activity. Its checks include real background playback, system play/pause,
+rendered frames after resume, source ownership, EOF, and service cleanup.
+
+For iOS, run `python3 __tests__/run-ios-media-session.py --simulator <udid>
+--output /tmp/mpv-media-ios --prepare`, use the Simulator Home control and reopen
+the test app, then run the same command with `--verify`. It checks actual
+background audio progress, Now Playing state, source continuity, and synthetic
+audio-interruption recovery. Simulator checks do not validate physical-device
+memory pressure, Bluetooth routing, or manufacturer battery restrictions.
 
 The runner requires `adb` and `ffmpeg`. It uses an app-private seekable video,
 checks pause/position preservation and moving video after real background

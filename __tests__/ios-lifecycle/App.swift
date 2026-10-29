@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import UIKit
+import MediaPlayer
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -42,6 +43,7 @@ class ProbeController: UIViewController {
   private var firstPositions: [Double] = []
   private var expectedPositions: [Double] = []
   private var errors: [[String: Any]] = []
+  private var mediaSessionChecks = 0
   private let status = UILabel()
   private let cycleCount: Int = {
     let args = ProcessInfo.processInfo.arguments
@@ -65,6 +67,8 @@ class ProbeController: UIViewController {
       return
     }
     let current = RetiringMpvView(appContext: nil)
+    current.showNotificationControls = true
+    current.metadata = ["title": "Lifecycle episode \(created + 1)"]
     player = current
     created += 1
     let cycle = created
@@ -88,6 +92,12 @@ class ProbeController: UIViewController {
     current.onLoad.handler = { [weak self, weak current] _ in
       guard let self, let current, self.player === current else { return }
       self.loaded += 1
+      current.updateMediaSession()
+      if MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyTitle] as? String == "Lifecycle episode \(cycle)" {
+        self.mediaSessionChecks += 1
+      } else {
+        self.errors.append(["error": "Media session did not follow the current player"])
+      }
       current.setLooping(true)
       current.setPropertyString("sub-use-margins", "no")
       if startsPaused {
@@ -145,6 +155,8 @@ class ProbeController: UIViewController {
       "loaded": loaded, "retired": retired.count,
       "retainedViews": retired.filter { $0.value != nil }.count, "errors": errors,
       "firstPositions": firstPositions, "expectedPositions": expectedPositions,
+      "mediaSessionChecks": mediaSessionChecks,
+      "mediaSessionCleared": MPNowPlayingInfoCenter.default().nowPlayingInfo == nil,
     ]
     let data = try! JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
     let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

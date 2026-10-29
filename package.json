@@ -1,6 +1,6 @@
 {
   "name": "expo-mpv",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "description": "Expo module wrapping libmpv for video playback on iOS and Android",
   "main": "build/index.js",
   "types": "build/index.d.ts",
@@ -26,6 +26,8 @@
     "test:libass": "python3 __tests__/run-libass-regression.py",
     "test:ios-lifecycle": "python3 __tests__/run-ios-lifecycle.py",
     "test:android-background": "python3 __tests__/run-android-background.py",
+    "test:android-media-session": "python3 __tests__/run-android-media-session.py",
+    "test:ios-media-session": "python3 __tests__/run-ios-media-session.py",
     "test:ios-rotation": "python3 __tests__/run-ios-rotation.py"
   },
   "keywords": [

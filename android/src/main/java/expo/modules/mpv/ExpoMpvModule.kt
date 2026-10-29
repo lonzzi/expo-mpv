@@ -37,8 +37,19 @@ class ExpoMpvModule : Module() {
                 view.startPosition = position ?: 0.0
             }
 
+            Prop("showNotificationControls") { view: ExpoMpvView, enabled: Boolean ->
+                view.showNotificationControls = enabled
+            }
+
+            Prop("metadata") { view: ExpoMpvView, metadata: Map<String, String>? ->
+                view.metadata = metadata ?: emptyMap()
+            }
+
+            OnViewDestroys { view: ExpoMpvView -> view.destroy() }
+
             OnViewDidUpdateProps { view: ExpoMpvView ->
                 view.loadSourceIfNeeded()
+                view.updateMediaSession()
             }
 
             Prop("paused") { view: ExpoMpvView, paused: Boolean ->

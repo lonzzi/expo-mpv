@@ -24,6 +24,9 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
     private var isDestroyed = false
     var sourceToLoad: String? = null
     var startPosition: Double = 0.0
+    var showNotificationControls = false
+    var metadata: Map<String, String> = emptyMap()
+    private var hasSource = false
 
     private val surfaceView = SurfaceView(context).apply {
         layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
@@ -33,6 +36,7 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
         context,
         object : MpvPlayer.Listener {
             override fun onPlaybackStateChange(state: String, isPlaying: Boolean) {
+                if (state == "idle") hasSource = false
                 onPlaybackStateChange(
                     mapOf(
                         "state" to state,
@@ -113,8 +117,16 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
     }
 
     override fun onDetachedFromWindow() {
-        destroy()
+        // Window detach can be temporary during native-screen/Activity changes.
+        // Release the engine only when Expo actually drops the React view.
+        player.setVideoVisible(false)
+        player.setSurface(null)
         super.onDetachedFromWindow()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        player.setVideoVisible(windowVisibility == View.VISIBLE)
     }
 
     override fun onWindowVisibilityChanged(visibility: Int) {
@@ -133,7 +145,17 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
     fun loadSourceIfNeeded() {
         val source = sourceToLoad ?: return
         sourceToLoad = null
+        hasSource = true
         player.loadFile(source, startPosition)
+    }
+
+    fun updateMediaSession() {
+        if (isDestroyed) return
+        if (showNotificationControls && hasSource) {
+            ExpoMpvPlaybackService.attach(context.applicationContext, player, metadata)
+        } else {
+            ExpoMpvPlaybackService.detach(player)
+        }
     }
 
     fun play() {
@@ -150,6 +172,7 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
 
     fun stop() {
         sourceToLoad = null
+        hasSource = false
         player.stop()
     }
 

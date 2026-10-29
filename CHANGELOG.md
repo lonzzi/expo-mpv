@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.22
+
+- Add opt-in native media controls with `showNotificationControls` and text
+  `metadata`. Android runs a media playback foreground service and handles audio
+  focus; iOS publishes Now Playing information and handles audio interruptions.
+- Keep Android playback alive when the video Surface or native window is
+  temporarily detached. Release resources when Expo drops the view, and retain
+  progress reporting while audio plays without a Surface.
+- Report Android keep-open EOF through the playback state event, and prevent a
+  retiring player from clearing a replacement player's media session.
+- Make iOS background video-track changes asynchronous and reapply the playback
+  audio category after libmpv initializes its AudioUnit output.
+- Add native simulator regressions for media controls, background playback,
+  source handoff, EOF, audio interruptions, and service cleanup.
+
 ## 0.1.21
 
 - Keep the previous iOS Metal drawable proportional while rotating, including

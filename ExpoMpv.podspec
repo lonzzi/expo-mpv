@@ -23,6 +23,7 @@ Pod::Spec.new do |s|
   s.frameworks = [
     'Metal',
     'AVFoundation',
+    'MediaPlayer',
     'CoreAudio',
     'AudioToolbox',
     'CoreVideo',

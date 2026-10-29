@@ -52,7 +52,7 @@ def build(work, module, app_source=None, bundle=BUNDLE):
                     args += ['-F', str(directory), '-framework', framework.stem]
                 else:
                     args.append(str(directory / lib['LibraryPath']))
-        for name in ['UIKit', 'Foundation', 'Metal', 'AVFoundation', 'CoreAudio',
+        for name in ['UIKit', 'Foundation', 'Metal', 'AVFoundation', 'MediaPlayer', 'CoreAudio',
                      'AudioToolbox', 'CoreVideo', 'CoreMedia', 'VideoToolbox', 'QuartzCore',
                      'CoreFoundation', 'IOSurface', 'CoreGraphics', 'CoreText', 'Security',
                      'SystemConfiguration', 'Accelerate']:
@@ -124,10 +124,12 @@ def main():
         assert data.get('finished'), f'No final result (crash or stalled player): {data}'
         assert data['created'] == data['loaded'] == data['retired'] == args.cycles, data
         assert data['retainedViews'] == 0 and not data['errors'], data
+        assert data['mediaSessionChecks'] == args.cycles and data['mediaSessionCleared'], data
         assert len(data['firstPositions']) == args.cycles, data
         for actual, expected in zip(data['firstPositions'], data['expectedPositions']):
             assert expected - 0.05 <= actual < expected + 1, (actual, expected)
         print(f"PASS: {args.cycles} loaded/retired players, no retained views or playback errors")
+        print('PASS: native Now Playing metadata follows each player and clears after teardown')
         print('PASS: first progress starts at the requested position, including paused/deferred loads')
     except Exception:
         log = work / 'build.log'

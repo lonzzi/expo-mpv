@@ -56,6 +56,13 @@ internal class MpvPlayer(
     @Volatile private var cachedSpeed: Double = 1.0
     @Volatile private var cachedVideoW: Long = 0
     @Volatile private var cachedVideoH: Long = 0
+    @Volatile private var hasSource = false
+    @Volatile private var cachedEnded = false
+
+    internal val sessionPlaying get() = hasSource && !cachedPause && !cachedEnded
+    internal val sessionPosition get() = (cachedTimePos.coerceAtLeast(0.0) * 1000).toLong()
+    internal val sessionDuration get() = (cachedDuration.coerceAtLeast(0.0) * 1000).toLong()
+    internal val sessionSpeed get() = cachedSpeed.toFloat()
 
     init {
         runOnPlayerThread {
@@ -65,6 +72,7 @@ internal class MpvPlayer(
 
     fun release() {
         if (isDestroyed) return
+        ExpoMpvPlaybackService.detach(this)
         stopProgressTimer()
         playerHandler.post {
             if (isDestroyed) return@post
@@ -116,6 +124,8 @@ internal class MpvPlayer(
 
     fun loadFile(url: String, startPosition: Double = 0.0) {
         runOnPlayerThread {
+            hasSource = true
+            cachedEnded = false
             val position = if (startPosition.isFinite()) startPosition.coerceAtLeast(0.0) else 0.0
             pendingSource = PendingSource(url, position)
             maybeLoadPendingSourceLocked()
@@ -129,6 +139,11 @@ internal class MpvPlayer(
     }
 
     fun pause() {
+        ExpoMpvPlaybackService.cancelFocusResume(this)
+        pauseForAudioFocus()
+    }
+
+    internal fun pauseForAudioFocus() {
         runOnPlayerThread {
             setPropertyBooleanLocked("pause", true)
         }
@@ -141,11 +156,14 @@ internal class MpvPlayer(
     }
 
     fun stop() {
+        hasSource = false
+        ExpoMpvPlaybackService.detach(this)
         runOnPlayerThread {
             pendingSource = null
             commandLocked("stop")
         }
         stopProgressTimer()
+        dispatchOnMain { listener.onPlaybackStateChange("idle", false) }
     }
 
     fun seekTo(position: Double) {
@@ -411,6 +429,17 @@ internal class MpvPlayer(
                 dispatchPlaybackState()
             }
 
+            "eof-reached" -> {
+                val wasEnded = cachedEnded
+                cachedEnded = value as? Boolean ?: false
+                if (cachedEnded) dispatchOnMain {
+                    ExpoMpvPlaybackService.update(this)
+                    listener.onPlaybackStateChange("ended", false)
+                    stopProgressTimer()
+                }
+                else if (wasEnded) dispatchPlaybackState()
+            }
+
             "paused-for-cache" -> {
                 val buffering = (value as? Boolean) ?: false
                 if (buffering == lastBufferingState) return
@@ -445,8 +474,10 @@ internal class MpvPlayer(
     }
 
     fun onEndFile(reason: String, error: String) {
+        cachedEnded = true
         stopProgressTimer()
         dispatchOnMain {
+            ExpoMpvPlaybackService.update(this)
             if (reason == "error" && error.isNotEmpty()) {
                 listener.onError("Playback error: $error")
             }
@@ -578,6 +609,7 @@ internal class MpvPlayer(
         if (ptr == 0L) return
 
         MPVLib.nativeObserveProperty(ptr, "pause", MPVLib.FORMAT_FLAG)
+        MPVLib.nativeObserveProperty(ptr, "eof-reached", MPVLib.FORMAT_FLAG)
         MPVLib.nativeObserveProperty(ptr, "duration", MPVLib.FORMAT_DOUBLE)
         MPVLib.nativeObserveProperty(ptr, "time-pos", MPVLib.FORMAT_DOUBLE)
         MPVLib.nativeObserveProperty(ptr, "paused-for-cache", MPVLib.FORMAT_FLAG)
@@ -635,16 +667,17 @@ internal class MpvPlayer(
 
     private fun dispatchPlaybackState() {
         dispatchOnMain {
+            ExpoMpvPlaybackService.update(this)
             listener.onPlaybackStateChange(
-                if (cachedPause) "paused" else "playing",
-                !cachedPause,
+                if (cachedEnded) "ended" else if (cachedPause) "paused" else "playing",
+                sessionPlaying,
             )
             updateProgressTimer()
         }
     }
 
     private fun updateProgressTimer() {
-        if (isDestroyed || !isInitialized || nativePtr == 0L || cachedPause || attachedSurface?.isValid != true) {
+        if (isDestroyed || !isInitialized || nativePtr == 0L || cachedPause || cachedEnded) {
             stopProgressTimer()
         } else if (progressRunnable == null) {
             startProgressTimer()
@@ -673,7 +706,7 @@ internal class MpvPlayer(
     }
 
     private fun emitProgressEvent(force: Boolean = false) {
-        if (isDestroyed || !isInitialized || (cachedPause && !force) || attachedSurface?.isValid != true) return
+        if (isDestroyed || !isInitialized || (cachedPause && !force)) return
 
         val position = cachedTimePos
         val duration = cachedDuration
@@ -695,6 +728,7 @@ internal class MpvPlayer(
         lastProgressEmitDuration = duration
         lastProgressEmitBufferedDuration = bufferedDuration
 
+        ExpoMpvPlaybackService.update(this)
         listener.onProgress(position, duration, bufferedDuration)
     }
 

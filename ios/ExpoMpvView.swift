@@ -1,6 +1,8 @@
 import ExpoModulesCore
 import Libmpv
 import CoreText
+import AVFoundation
+import MediaPlayer
 
 class ExpoMpvView: ExpoView {
   // MARK: - Metal Layer
@@ -54,6 +56,9 @@ class ExpoMpvView: ExpoView {
   // Apply source and startPosition together after all React props have arrived.
   var sourceToLoad: String?
   var startPosition: Double = 0
+  var showNotificationControls = false
+  var metadata: [String: String] = [:]
+  private var nowPlaying: ExpoMpvNowPlayingController?
   private var pendingHwdec: String = "videotoolbox"
   private var progressTimer: Timer?
 
@@ -271,12 +276,13 @@ class ExpoMpvView: ExpoView {
 
   @objc private func appDidEnterBackground() {
     guard mpv != nil else { return }
-    mpv_set_property_string(mpv, "vid", "no")
+    setPropertyString("vid", "no")
   }
 
   @objc private func appWillEnterForeground() {
     guard mpv != nil else { return }
-    mpv_set_property_string(mpv, "vid", "auto")
+    setPropertyString("vid", "auto")
+    setNeedsLayout()
   }
 
   // MARK: - Progress Timer
@@ -313,6 +319,8 @@ class ExpoMpvView: ExpoView {
 
     guard position.isFinite && duration.isFinite else { return }
 
+    updateMediaSession()
+
     onProgress([
       "position": position,
       "duration": duration,
@@ -343,6 +351,7 @@ class ExpoMpvView: ExpoView {
   private func emitStateChange() {
     guard !isUpdatingProperties else { return }
     let state = computeState()
+    updateMediaSession()
 
     switch state {
     case "playing", "loading", "buffering":
@@ -481,6 +490,10 @@ class ExpoMpvView: ExpoView {
 
         case MPV_EVENT_PLAYBACK_RESTART:
           self.dispatchEvent(for: handle) {
+            // libmpv's AudioUnit driver initializes the shared session with
+            // mixWithOthers. A system media owner must reapply its nonmixing
+            // playback category after the audio output has actually started.
+            self.nowPlaying?.activateAudioSession()
             // A paused load has no progress timer. Publish the decoded frame's
             // actual position, including any HLS/keyframe adjustment.
             self.emitProgressEvent()
@@ -584,6 +597,17 @@ class ExpoMpvView: ExpoView {
 
   // MARK: - Public API
 
+  func updateMediaSession() {
+    guard showNotificationControls, hasSource, mpv != nil else {
+      nowPlaying?.invalidate()
+      nowPlaying = nil
+      return
+    }
+    guard !isUpdatingProperties else { return }
+    if nowPlaying == nil { nowPlaying = ExpoMpvNowPlayingController(player: self) }
+    nowPlaying?.update(metadata: metadata, playback: getPlaybackInfo(), ended: getFlag("eof-reached"))
+  }
+
   func loadSourceIfNeeded() {
     guard let source = sourceToLoad else { return }
     sourceToLoad = nil
@@ -601,6 +625,7 @@ class ExpoMpvView: ExpoView {
     }
     log("loadFile: \(url)")
     hasSource = true
+    updateMediaSession()
     setPropertyString("force-rgba-osd-rendering", "no")
     let position = startPosition.isFinite ? max(0, startPosition) : 0
     // Per-file options seek before the first frame and cannot leak to the next file.
@@ -617,15 +642,18 @@ class ExpoMpvView: ExpoView {
   }
 
   func play() {
+    nowPlaying?.activateAudioSession()
     setFlag("pause", false)
   }
 
   func pause() {
+    nowPlaying?.cancelInterruptionResume()
     setFlag("pause", true)
   }
 
   func togglePlay() {
     let isPaused = getFlag("pause")
+    if isPaused { nowPlaying?.activateAudioSession() }
     setFlag("pause", !isPaused)
   }
 
@@ -635,6 +663,7 @@ class ExpoMpvView: ExpoView {
     cancelPendingCommands()
     command("stop")
     hasSource = false
+    updateMediaSession()
     DispatchQueue.main.async { [weak self] in
       self?.emitStateChange() // -> idle
     }
@@ -845,6 +874,8 @@ class ExpoMpvView: ExpoView {
   }
 
   func destroy() {
+    nowPlaying?.invalidate()
+    nowPlaying = nil
     stopProgressTimer()
     cancelPendingCommands()
     if let mpv = mpv {
@@ -1135,6 +1166,126 @@ class ExpoMpvView: ExpoView {
 
   private func log(_ message: String) {
     NSLog("[ExpoMpv] %@", message)
+  }
+}
+
+/// One system media owner per process. A retiring view cannot clear its successor.
+private final class ExpoMpvNowPlayingController {
+  private static weak var owner: ExpoMpvNowPlayingController?
+  private weak var player: ExpoMpvView?
+  private var commands: [(MPRemoteCommand, Any)] = []
+  private var observers: [NSObjectProtocol] = []
+  private var resumeAfterInterruption = false
+
+  init(player: ExpoMpvView) {
+    self.player = player
+    Self.owner?.invalidate()
+    Self.owner = self
+    UIApplication.shared.beginReceivingRemoteControlEvents()
+    activateAudioSession()
+    let center = MPRemoteCommandCenter.shared()
+    bind(center.playCommand) { player in player.play() }
+    bind(center.pauseCommand) { player in player.pause() }
+    bind(center.togglePlayPauseCommand) { player in player.togglePlay() }
+    bind(center.stopCommand) { player in player.stop() }
+    center.changePlaybackPositionCommand.isEnabled = true
+    let token = center.changePlaybackPositionCommand.addTarget { [weak self] event in
+      guard let self, Self.owner === self, self.player != nil,
+            let position = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+      DispatchQueue.main.async { [weak self] in
+        guard let self, Self.owner === self else { return }
+        self.player?.seekTo(position.positionTime)
+      }
+      return .success
+    }
+    commands.append((center.changePlaybackPositionCommand, token))
+    let notifications = NotificationCenter.default
+    observers.append(notifications.addObserver(forName: AVAudioSession.interruptionNotification,
+      object: nil, queue: .main) { [weak self] notification in self?.interrupted(notification) })
+    observers.append(notifications.addObserver(forName: AVAudioSession.routeChangeNotification,
+      object: nil, queue: .main) { [weak self] notification in
+        guard let self, Self.owner === self,
+              let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
+        self.resumeAfterInterruption = false
+        self.player?.pause()
+      })
+  }
+
+  private func bind(_ command: MPRemoteCommand, action: @escaping (ExpoMpvView) -> Void) {
+    command.isEnabled = true
+    let token = command.addTarget { [weak self] _ in
+      guard let self, Self.owner === self, self.player != nil else { return .commandFailed }
+      DispatchQueue.main.async { [weak self] in
+        guard let self, Self.owner === self, let player = self.player else { return }
+        action(player)
+      }
+      return .success
+    }
+    commands.append((command, token))
+  }
+
+  func activateAudioSession() {
+    guard Self.owner === self else { return }
+    do {
+      let audio = AVAudioSession.sharedInstance()
+      try audio.setCategory(.playback, mode: .moviePlayback)
+      try audio.setActive(true)
+    } catch { NSLog("[ExpoMpv] Unable to activate playback audio session: %@", String(describing: error)) }
+  }
+
+  func update(metadata: [String: String], playback: [String: Any], ended: Bool) {
+    guard Self.owner === self else { return }
+    let playing = playback["isPlaying"] as? Bool == true && !ended
+    let position = playback["position"] as? Double ?? 0
+    let duration = playback["duration"] as? Double ?? 0
+    let speed = playback["speed"] as? Double ?? 1
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+      MPMediaItemPropertyTitle: metadata["title"] ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Media",
+      MPMediaItemPropertyArtist: metadata["artist"] ?? "",
+      MPMediaItemPropertyAlbumTitle: metadata["albumTitle"] ?? "",
+      MPMediaItemPropertyPlaybackDuration: duration.isFinite ? max(0, duration) : 0,
+      MPNowPlayingInfoPropertyElapsedPlaybackTime: position.isFinite ? max(0, position) : 0,
+      MPNowPlayingInfoPropertyPlaybackRate: playing ? speed : 0,
+      MPNowPlayingInfoPropertyDefaultPlaybackRate: speed,
+      MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.video.rawValue,
+    ]
+    // Also publish explicit state for Simulator/Mac Catalyst, where the system
+    // cannot infer native AudioUnit playback from a physical audio session.
+    MPNowPlayingInfoCenter.default().playbackState = playing ? .playing : .paused
+  }
+
+  private func interrupted(_ notification: Notification) {
+    guard Self.owner === self, let player,
+          let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+          let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+    if type == .began {
+      let wasPlaying = player.getPlaybackInfo()["isPlaying"] as? Bool == true
+      player.pause()
+      resumeAfterInterruption = wasPlaying
+    } else {
+      let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+      let resume = resumeAfterInterruption && AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+      resumeAfterInterruption = false
+      if resume { player.play() }
+    }
+  }
+
+  func cancelInterruptionResume() { resumeAfterInterruption = false }
+
+  func invalidate() {
+    commands.forEach { $0.0.removeTarget($0.1) }
+    commands.removeAll()
+    observers.forEach { NotificationCenter.default.removeObserver($0) }
+    observers.removeAll()
+    if Self.owner === self {
+      Self.owner = nil
+      MPNowPlayingInfoCenter.default().playbackState = .stopped
+      MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+      UIApplication.shared.endReceivingRemoteControlEvents()
+    }
+    // libmpv also uses the shared audio session. Its asynchronous teardown can
+    // overlap a new player, so never deactivate the process-wide session here.
   }
 }
 

@@ -171,6 +171,15 @@ export type ExpoMpvViewProps = {
    */
   startPosition?: number;
 
+  /** Publish native lock-screen controls. Android also runs a media playback
+   * foreground service. Controls operate on this player without a JS round-trip.
+   * Defaults to false; the host must enable the iOS audio background mode.
+   */
+  showNotificationControls?: boolean;
+
+  /** Text displayed by the system media controls. Never pass a credentialed source URL. */
+  metadata?: { title?: string; artist?: string; albumTitle?: string };
+
   /**
    * Whether playback is paused.
    */
