@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import org.json.JSONObject
@@ -24,6 +25,10 @@ class ProbeActivity : Activity(), MpvPlayer.Listener, SurfaceHolder.Callback {
     private var foreground = false
     private var ended = false
     private var title = "Episode 1"
+    private var exitCallbacks = 0
+    private var exitCallbackOnMain = true
+    private var exitDispatchMs = 0.0
+    private var exitDetachMs = 0.0
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.getStringExtra("command")) {
@@ -39,11 +44,26 @@ class ProbeActivity : Activity(), MpvPlayer.Listener, SurfaceHolder.Callback {
                 "end" -> { player.setLooping(false); player.seekTo(29.0) }
                 "replay" -> { player.seekTo(5.0); player.play() }
                 "stop" -> { player.stop(); writeState() }
+                "prepareExit" -> prepareExit()
+                "releaseAndPrepare" -> { player.release(); prepareExit() }
             }
         }
     }
 
     private fun createPlayer() = MpvPlayer(applicationContext, this).apply { setHwdec("no") }
+
+    private fun prepareExit() {
+        val start = SystemClock.elapsedRealtimeNanos()
+        player.prepareForExit {
+            exitCallbacks++
+            exitCallbackOnMain = exitCallbackOnMain && Looper.myLooper() == Looper.getMainLooper()
+            val detachStart = SystemClock.elapsedRealtimeNanos()
+            player.setSurface(null)
+            exitDetachMs = (SystemClock.elapsedRealtimeNanos() - detachStart) / 1_000_000.0
+            writeState()
+        }
+        exitDispatchMs = (SystemClock.elapsedRealtimeNanos() - start) / 1_000_000.0
+    }
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -91,6 +111,8 @@ class ProbeActivity : Activity(), MpvPlayer.Listener, SurfaceHolder.Callback {
         val state = JSONObject().put("position", player.sessionPosition)
             .put("playing", player.sessionPlaying).put("foreground", foreground)
             .put("loads", loads).put("ended", ended).put("title", title)
+            .put("exitCallbacks", exitCallbacks).put("exitCallbackOnMain", exitCallbackOnMain)
+            .put("exitDispatchMs", exitDispatchMs).put("exitDetachMs", exitDetachMs)
             .put("errors", org.json.JSONArray(errors))
         val temporary = File(filesDir, "state.tmp")
         temporary.writeText(state.toString())

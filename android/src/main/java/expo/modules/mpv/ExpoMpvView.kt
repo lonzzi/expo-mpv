@@ -134,6 +134,10 @@ class ExpoMpvView(context: Context, appContext: AppContext) : ExpoView(context, 
         player.setVideoVisible(visibility == View.VISIBLE)
     }
 
+    fun prepareForExit(onReady: () -> Unit) {
+        player.prepareForExit(onReady)
+    }
+
     fun destroy() {
         if (isDestroyed) return
         isDestroyed = true

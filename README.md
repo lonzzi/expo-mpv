@@ -213,6 +213,8 @@ const media = await playerRef.current?.getMediaInfo();
 - `pause()`
 - `togglePlay()`
 - `stop()`
+- `prepareForExit()` — await before removing the Android video view; pauses and
+  detaches output on the player thread. Resolves without changes on iOS.
 - `seekTo(position)`
 - `seekBy(offset)`
 - `setSpeed(speed)`

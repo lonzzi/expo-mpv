@@ -267,6 +267,8 @@ export type ExpoMpvViewRef = {
   pause: () => Promise<void>;
   togglePlay: () => Promise<void>;
   stop: () => Promise<void>;
+  /** Pause and detach Android video output before removing the view. No-op on iOS. */
+  prepareForExit: () => Promise<void>;
   seekTo: (position: number) => Promise<void>;
   seekBy: (offset: number) => Promise<void>;
   setSpeed: (speed: number) => Promise<void>;

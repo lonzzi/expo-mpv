@@ -70,6 +70,28 @@ internal class MpvPlayer(
         }
     }
 
+    fun prepareForExit(onReady: () -> Unit) {
+        // SurfaceHolder waits for the renderer when its native window is removed.
+        // Finish that work on the player thread before navigation destroys the view.
+        ExpoMpvPlaybackService.cancelFocusResume(this)
+        stopProgressTimer()
+        val posted = playerHandler.post {
+            try {
+                if (!isDestroyed) {
+                    videoVisible = false
+                    pendingSource = null
+                    setPropertyBooleanLocked("pause", true)
+                    attachedSurface = null
+                    updateSurfaceLocked()
+                }
+            } finally {
+                // Resolve on the main thread even when release races preparation.
+                mainHandler.post { onReady() }
+            }
+        }
+        if (!posted) mainHandler.post { onReady() }
+    }
+
     fun release() {
         if (isDestroyed) return
         ExpoMpvPlaybackService.detach(this)

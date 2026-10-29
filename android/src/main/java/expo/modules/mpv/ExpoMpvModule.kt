@@ -1,5 +1,6 @@
 package expo.modules.mpv
 
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -89,6 +90,10 @@ class ExpoMpvModule : Module() {
 
             AsyncFunction("togglePlay") { view: ExpoMpvView ->
                 view.togglePlay()
+            }
+
+            AsyncFunction("prepareForExit") { view: ExpoMpvView, promise: Promise ->
+                view.prepareForExit { promise.resolve(null) }
             }
 
             AsyncFunction("stop") { view: ExpoMpvView ->

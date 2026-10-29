@@ -23,6 +23,7 @@ ACTIVITY = f'{PACKAGE}/expo.modules.mpv.ProbeActivity'
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--device', required=True)
+    parser.add_argument('--adb-port', type=int, default=5037)
     parser.add_argument('--cycles', type=int, default=5)
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
@@ -31,7 +32,7 @@ def main():
     project = work / 'project'
     project.mkdir(exist_ok=True)
     print(f'Artifacts: {work}', flush=True)
-    adb = ['adb', '-s', args.device]
+    adb = ['adb', '-P', str(args.adb_port), '-s', args.device]
 
     def command(*parts, binary=False):
         return subprocess.check_output([str(part) for part in parts], text=not binary).strip()
@@ -158,14 +159,34 @@ android {{
     control('replay')
     wait(lambda data: not data.get('ended', True) and data.get('playing')
          and 5000 <= data.get('position', 0) < 8000, 'resume after EOF seek')
+    preparations = []
+
+    def prepared(count, label):
+        current = wait(lambda data: data.get('exitCallbacks') == count and not data.get('playing'), label)
+        assert current['exitCallbackOnMain'], current
+        assert current['exitDispatchMs'] < 100, f'Exit request blocked the main thread: {current}'
+        assert current['exitDetachMs'] < 100, f'Prepared surface detach blocked the main thread: {current}'
+        preparations.append({'case': label, 'dispatchMs': current['exitDispatchMs'],
+                             'detachMs': current['exitDetachMs']})
+
+    control('prepareExit')
+    prepared(1, 'prepare playing exit')
+    control('prepareExit')
+    prepared(2, 'repeated exit preparation')
     control('stop')
     time.sleep(1)
     services = device('shell', 'dumpsys', 'activity', 'services', PACKAGE)
     assert 'isForeground=true' not in services, services
+    control('releaseAndPrepare')
+    prepared(3, 'release racing exit preparation')
+    time.sleep(.3)
+    control('prepareExit')
+    prepared(4, 'preparation after player thread exits')
     final = state()
     assert not final['errors'] and final['loads'] == 2, final
-    (work / 'result.json').write_text(json.dumps({'passed': True, 'cycles': results, 'final': final}, indent=2) + '\n')
-    print(f'PASS: {args.cycles} real background/foreground cycles, native remote play/pause, video frames, source handoff, EOF and service cleanup', flush=True)
+    (work / 'result.json').write_text(json.dumps({'passed': True, 'cycles': results,
+                                                'exitPreparations': preparations, 'final': final}, indent=2) + '\n')
+    print(f'PASS: {args.cycles} real background/foreground cycles, native remote play/pause, video frames, source handoff, EOF, service cleanup and four exit preparation cases', flush=True)
 
 
 if __name__ == '__main__':

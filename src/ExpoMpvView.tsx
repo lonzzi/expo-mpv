@@ -26,6 +26,7 @@ function ExpoMpvView(props: ExpoMpvViewComponentProps) {
       pause: () => nativeRef.current?.pause() ?? Promise.resolve(),
       togglePlay: () => nativeRef.current?.togglePlay() ?? Promise.resolve(),
       stop: () => nativeRef.current?.stop() ?? Promise.resolve(),
+      prepareForExit: () => nativeRef.current?.prepareForExit?.() ?? Promise.resolve(),
       seekTo: (position: number) => {
         // Guard against NaN/undefined reaching the native Double parameter,
         // which otherwise throws a native type error.

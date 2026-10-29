@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.23
+
+- Add `prepareForExit()` to pause and detach Android video output on the player
+  thread before navigation removes the view, avoiding a renderer wait on the UI
+  thread. The promise also resolves safely after release or repeated preparation.
+- Add native regressions for exit preparation, main-thread callbacks, repeated
+  calls, and preparation after player release.
+
 ## 0.1.22
 
 - Add opt-in native media controls with `showNotificationControls` and text
