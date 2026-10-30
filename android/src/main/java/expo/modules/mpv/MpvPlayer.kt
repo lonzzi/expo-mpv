@@ -227,9 +227,15 @@ internal class MpvPlayer(
     fun setHwdec(mode: String) {
         runOnPlayerThread {
             pendingHwdec = androidDevice.resolveHwdec(mode)
-            if (isInitialized && nativePtr != 0L) {
-                setPropertyStringLocked("hwdec", pendingHwdec)
+            if (nativePtr != 0L) {
+                configureHardwareDecoding(
+                    pendingHwdec,
+                    isInitialized,
+                    { name, value -> MPVLib.nativeSetOptionString(nativePtr, name, value) },
+                    ::setPropertyStringLocked,
+                )
             }
+            Log.i("ExpoMpv", "Hardware decoding selection: $mode -> $pendingHwdec; initialized=$isInitialized")
         }
     }
 

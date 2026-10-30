@@ -1,6 +1,6 @@
 {
   "name": "expo-mpv",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "Expo module wrapping libmpv for video playback on iOS and Android",
   "main": "build/index.js",
   "types": "build/index.d.ts",
