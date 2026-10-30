@@ -130,6 +130,21 @@ export type MediaInfo = {
   hwdec: string;
   /** Actually active hardware decoder (empty string = software decoding) */
   hwdecCurrent: string;
+  /** Android firmware identifiers and the evidence used for emulator detection. */
+  androidDevice?: {
+    isEmulator: boolean;
+    emulatorReason: string;
+    bootQemu: string;
+    kernelQemu: string;
+    defaultHwdec: string;
+    model: string;
+    manufacturer: string;
+    board: string;
+    hardware: string;
+    product: string;
+    host: string;
+    fingerprint: string;
+  };
   /** Video codec name (e.g. "h264", "hevc", "av1") */
   videoCodec: string;
   /** Audio codec name (e.g. "aac", "opus") */
@@ -212,7 +227,8 @@ export type ExpoMpvViewProps = {
   loop?: boolean;
 
   /**
-   * Hardware decoding mode. Default is 'mediacodec' on Android, 'auto' on iOS.
+   * Hardware decoding mode. Default is 'mediacodec' on Android, 'videotoolbox' on iOS.
+   * On Android, 'auto' restores the default (software on confirmed emulators).
    * Use 'no' to force software decoding, 'mediacodec' for Android HW decode,
    * 'mediacodec-copy' for HW decode with CPU copy.
    */

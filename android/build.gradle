@@ -147,4 +147,5 @@ afterEvaluate {
 
 dependencies {
   compileOnly 'androidx.lifecycle:lifecycle-common:2.7.0'
+  testImplementation 'junit:junit:4.13.2'
 }

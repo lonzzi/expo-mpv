@@ -184,16 +184,16 @@ const media = await playerRef.current?.getMediaInfo();
 
 ### Props
 
-| Prop            | Type      | Description                                                                              |
-| --------------- | --------- | ---------------------------------------------------------------------------------------- |
-| `source`        | `string`  | Media URL or local file path                                                             |
-| `startPosition` | `number`  | Initial position in seconds (default: 0), applied with the source before its first frame |
-| `paused`        | `boolean` | Pause/resume playback                                                                    |
-| `speed`         | `number`  | Playback speed (default: 1.0)                                                            |
-| `volume`        | `number`  | Volume 0-100 (default: 100)                                                              |
-| `muted`         | `boolean` | Mute audio                                                                               |
-| `loop`          | `boolean` | Loop current file                                                                        |
-| `hwdec`         | `string`  | Hardware decode mode. Defaults to `videotoolbox` on iOS and `mediacodec` on Android      |
+| Prop            | Type      | Description                                                                                                                                                                        |
+| --------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`        | `string`  | Media URL or local file path                                                                                                                                                       |
+| `startPosition` | `number`  | Initial position in seconds (default: 0), applied with the source before its first frame                                                                                           |
+| `paused`        | `boolean` | Pause/resume playback                                                                                                                                                              |
+| `speed`         | `number`  | Playback speed (default: 1.0)                                                                                                                                                      |
+| `volume`        | `number`  | Volume 0-100 (default: 100)                                                                                                                                                        |
+| `muted`         | `boolean` | Mute audio                                                                                                                                                                         |
+| `loop`          | `boolean` | Loop current file                                                                                                                                                                  |
+| `hwdec`         | `string`  | Hardware decode mode. Defaults to `videotoolbox` on iOS; Android `auto` uses `mediacodec` except on confirmed emulators (`no`). Explicit `mediacodec` / `no` overrides this choice |
 
 ### Events
 

@@ -1,7 +1,6 @@
 package expo.modules.mpv
 
 import android.content.Context
-import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -39,7 +38,8 @@ internal class MpvPlayer(
     private var videoOutput = "gpu"
     private data class PendingSource(val url: String, val startPosition: Double)
     private var pendingSource: PendingSource? = null
-    private var pendingHwdec: String = if (isEmulator()) "no" else "mediacodec"
+    private val androidDevice = AndroidDeviceEnvironment.current()
+    private var pendingHwdec: String = androidDevice.defaultHwdec
     private var progressRunnable: Runnable? = null
     private var lastProgressEmitPosition: Double = Double.NaN
     private var lastProgressEmitDuration: Double = Double.NaN
@@ -226,9 +226,9 @@ internal class MpvPlayer(
 
     fun setHwdec(mode: String) {
         runOnPlayerThread {
-            pendingHwdec = mode
+            pendingHwdec = androidDevice.resolveHwdec(mode)
             if (isInitialized && nativePtr != 0L) {
-                setPropertyStringLocked("hwdec", mode)
+                setPropertyStringLocked("hwdec", pendingHwdec)
             }
         }
     }
@@ -378,6 +378,7 @@ internal class MpvPlayer(
             mapOf(
                 "hwdec" to hwdec,
                 "hwdecCurrent" to hwdecCurrent,
+                "androidDevice" to androidDevice.diagnostics(),
                 "videoCodec" to videoCodec,
                 "audioCodec" to audioCodec,
                 "width" to width,
@@ -542,9 +543,7 @@ internal class MpvPlayer(
             MPVLib.nativeSetOptionString(nativePtr, "hwdec-codecs", "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
         }
 
-        if (isEmulator()) {
-            Log.w("ExpoMpv", "Emulator detected, hardware decoding disabled (using software decoding)")
-        }
+        Log.i("ExpoMpv", "Hardware decoding configured: $pendingHwdec; emulatorReason=${androidDevice.emulatorReason ?: "none"}")
 
         MPVLib.nativeSetOptionString(nativePtr, "video-sync", "audio")
         MPVLib.nativeSetOptionString(nativePtr, "audio-pitch-correction", "yes")
@@ -855,25 +854,4 @@ internal class MpvPlayer(
         MPVLib.nativeCommand(nativePtr, (listOf(command) + args).toTypedArray())
     }
 
-    companion object {
-        private fun isEmulator(): Boolean {
-            return (
-                Build.FINGERPRINT.startsWith("generic") ||
-                    Build.FINGERPRINT.startsWith("unknown") ||
-                    Build.MODEL.contains("google_sdk") ||
-                    Build.MODEL.contains("Emulator") ||
-                    Build.MODEL.contains("Android SDK built for x86") ||
-                    Build.BOARD == "QC_Reference_Phone" ||
-                    Build.MANUFACTURER.contains("Genymotion") ||
-                    Build.HOST.startsWith("Build") ||
-                    Build.BRAND.startsWith("generic") ||
-                    Build.DEVICE.startsWith("generic") ||
-                    Build.PRODUCT == "google_sdk" ||
-                    Build.PRODUCT.startsWith("sdk") ||
-                    Build.PRODUCT.endsWith("_cf") ||
-                    Build.HARDWARE.contains("goldfish") ||
-                    Build.HARDWARE.contains("ranchu")
-                )
-        }
-    }
 }

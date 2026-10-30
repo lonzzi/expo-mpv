@@ -26,6 +26,9 @@ object MPVLib {
     const val EVENT_PLAYBACK_RESTART = 21
     const val EVENT_PROPERTY_CHANGE = 22
 
+    /** Boot and legacy QEMU flags; no hidden Java APIs or device permissions. */
+    external fun nativeGetEmulatorProperties(): Array<String>
+
     // ---- Lifecycle ----
 
     external fun nativeCreate(): Long

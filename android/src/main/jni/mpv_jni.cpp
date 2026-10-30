@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <vector>
 #include <dlfcn.h>
+#include <sys/system_properties.h>
 
 extern "C" {
 #include <mpv/client.h>
@@ -612,7 +613,26 @@ static void nativeObserveProperty(JNIEnv *env, jobject /*thiz*/, jlong ptr, jstr
 
 // ---- JNI Registration ----
 
+static jobjectArray nativeGetEmulatorProperties(JNIEnv *env, jobject /*thiz*/) {
+    const char *names[] = {"ro.boot.qemu", "ro.kernel.qemu"};
+    jclass stringClass = env->FindClass("java/lang/String");
+    if (!stringClass) return nullptr;
+    jobjectArray result = env->NewObjectArray(2, stringClass, nullptr);
+    env->DeleteLocalRef(stringClass);
+    if (!result) return nullptr;
+    for (int i = 0; i < 2; ++i) {
+        char value[PROP_VALUE_MAX] = {};
+        __system_property_get(names[i], value);
+        jstring entry = env->NewStringUTF(value);
+        if (!entry) return nullptr;
+        env->SetObjectArrayElement(result, i, entry);
+        env->DeleteLocalRef(entry);
+    }
+    return result;
+}
+
 static JNINativeMethod methods[] = {
+    {"nativeGetEmulatorProperties", "()[Ljava/lang/String;", (void *)nativeGetEmulatorProperties},
     {"nativeCreate", "()J", (void *)nativeCreate},
     {"nativeSetCallback", "(JLjava/lang/Object;)V", (void *)nativeSetCallback},
     {"nativeInitialize", "(J)I", (void *)nativeInitialize},
