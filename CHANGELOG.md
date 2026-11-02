@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.27
+
+- Add opt-in Android picture-in-picture with native play/pause controls,
+  automatic entry during playback, and restoration of the existing player when
+  returning to the app. Closing PiP pauses playback.
+- Render optional timed text overlays, including danmaku, against the native mpv
+  clock so they keep working through backgrounding, pause, seeking, and speed
+  changes without relying on JavaScript timers.
+- Expose PiP props, mode-change events, and an explicit entry method. Configure
+  the Android Activity through the Expo config plugin; a native rebuild is
+  required. The PiP APIs have no effect on iOS.
+- Extend the Android background regression runner with PiP video, danmaku,
+  entry gates, native actions, close behavior, and source-continuity checks.
+
 ## 0.1.23
 
 - Add `prepareForExit()` to pause and detach Android video output on the player

@@ -37,6 +37,7 @@ def main():
     parser.add_argument('--seconds', type=float, default=15)
     parser.add_argument('--hwdec', default='no')
     parser.add_argument('--rotation', action='store_true', help='Test playing/paused rotations instead of background cycles')
+    parser.add_argument('--pip', action='store_true', help='Test automatic Android PiP and native timed danmaku')
     parser.add_argument('--apk', type=Path)
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
@@ -159,7 +160,7 @@ def main():
     (work / 'source.json').write_text(json.dumps(provenance, indent=2) + '\n')
     try:
         fixture = work / 'fixture.mp4'
-        if args.rotation:
+        if args.rotation or args.pip:
             pixels = bytearray()
             for y in range(360):
                 for x in range(640):
@@ -168,7 +169,7 @@ def main():
             pattern = work / 'circle.ppm'
             pattern.write_bytes(b'P6\n640 360\n255\n' + pixels)
             subprocess.run(['ffmpeg', '-v', 'error', '-y', '-loop', '1', '-i', str(pattern),
-                            '-t', '60', '-r', '60', '-c:v', 'libx264', '-preset', 'ultrafast',
+                            '-t', '180' if args.pip else '60', '-r', '60', '-c:v', 'libx264', '-preset', 'ultrafast',
                             '-crf', '18', '-pix_fmt', 'yuv420p', str(fixture)], check=True)
         else:
             subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30',
@@ -183,20 +184,169 @@ def main():
         device('shell', 'run-as', args.bundle_id, 'cp', remote, f'files/{fixture_name}')
         device('shell', 'rm', remote)
         source_text = (ROOT / '__tests__/android-background/App.tsx').read_text()
-        config = {'endpoint': endpoint, 'source': source, 'hwdec': args.hwdec}
+        config = {'endpoint': endpoint, 'source': source, 'hwdec': args.hwdec, 'pip': args.pip}
         entry.parent.mkdir(exist_ok=True)
         entry.write_text(source_text.replace("'__CONFIG_JSON__'", json.dumps(json.dumps(config))))
         device('reverse', f'tcp:{args.port}', f'tcp:{args.port}')
         device('shell', 'am', 'force-stop', args.bundle_id)
         url = f'{args.scheme}://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A{args.port}'
-        device('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', url,
-               '-n', f'{args.bundle_id}/.MainActivity')
+        launch_result = device('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', url,
+                               '-n', f'{args.bundle_id}/.MainActivity')
+        print(launch_result, flush=True)
         wait(lambda event: event['event'] == 'load', 'fixture load', timeout=120)
         telemetry(lambda data: data.get('playback', {}).get('position', 0) > 5, 'initial playback')
         pid = device('shell', 'pidof', args.bundle_id)
         frame('initial')
         results = []
-        if args.rotation:
+        if args.pip:
+            import numpy as np
+            from PIL import Image
+            pip_bounds = []
+
+            def pinned():
+                return any('mode=pinned' in line and args.bundle_id in line
+                           for line in device('shell', 'dumpsys', 'activity', 'activities').splitlines())
+
+            def wait_pinned(expected):
+                deadline = time.monotonic() + 15
+                while time.monotonic() < deadline:
+                    if pinned() == expected:
+                        return
+                    time.sleep(.25)
+                raise AssertionError(f'Expected pinned={expected}')
+
+            def pip_frame(name):
+                path = work / f'{name}.png'
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline:
+                    path.write_bytes(device('exec-out', 'screencap', '-p', binary=True))
+                    pixels = np.asarray(Image.open(path).convert('RGB')).astype(int)
+                    # Fixture video contains only gray/green. Magenta is native text.
+                    mask = (pixels[:, :, 0] > 150) & (pixels[:, :, 1] < 100) & (pixels[:, :, 2] > 150)
+                    green_y, green_x = np.where((pixels[:, :, 0] < 40) & (pixels[:, :, 1] > 220) & (pixels[:, :, 2] < 40))
+                    if len(green_x) < 200:
+                        time.sleep(.5)
+                        continue
+                    # Limit to the video's bounds; launcher icons can be magenta.
+                    video_width = (green_x.max() - green_x.min() + 1) * 640 / 144
+                    video_height = video_width * 9 / 16
+                    left, right = int(green_x.mean() - video_width / 2), int(green_x.mean() + video_width / 2)
+                    top, bottom = int(green_y.mean() - video_height / 2), int(green_y.mean() + video_height / 2)
+                    mask[:max(0, top), :] = False
+                    mask[max(0, bottom):, :] = False
+                    mask[:, :max(0, left)] = False
+                    mask[:, max(0, right):] = False
+                    if int(mask.sum()) > 20:
+                        pip_bounds[:] = [left, top, right, bottom]
+                        # Ignore rounded corners and a small edge allowance:
+                        # text crossing the green circle shifts its measured center.
+                        inset_x, inset_y = int(video_width * .08), int(video_height * .08)
+                        area = pixels[max(0, top + inset_y):max(0, bottom - inset_y),
+                                      max(0, left + inset_x):max(0, right - inset_x)]
+                        assert int(np.all(area > 235, axis=2).sum()) < 10, 'Full-screen status UI leaked into PiP'
+                        assert .92 < (green_x.max() - green_x.min()) / (green_y.max() - green_y.min()) < 1.08, 'PiP video stretched'
+                        return mask
+                    time.sleep(.5)
+                raise AssertionError(f'Native PiP danmaku missing: {path}')
+
+            def tap_pip_action(description):
+                left, top, right, bottom = pip_bounds
+                width, height = right - left, bottom - top
+                # Android's phone PiP menu places the single custom action at
+                # bottom-center and Close at top-right. Its white icons are
+                # unambiguous over this gray/green/magenta fixture. Shell
+                # uiautomator's idle wait can outlast the menu's auto-hide timer.
+                if description == 'Close':
+                    x1, x2 = int(left + width * .75), int(right - width * .03)
+                    y1, y2 = int(top + height * .03), int(top + height * .3)
+                else:
+                    x1, x2 = int(left + width * .35), int(left + width * .65)
+                    y1, y2 = int(top + height * .68), int(bottom - height * .03)
+                path = work / f'pip-menu-{description}.png'
+                for _ in range(3):
+                    path.write_bytes(device('exec-out', 'screencap', '-p', binary=True))
+                    pixels = np.asarray(Image.open(path).convert('RGB'))
+                    icon_y, icon_x = np.where(np.all(pixels[y1:y2, x1:x2] > 235, axis=2))
+                    if len(icon_x) > 20:
+                        device('shell', 'input', 'tap', int(x1 + icon_x.mean()), int(y1 + icon_y.mean()))
+                        return
+                    device('shell', 'input', 'tap', int(left + width * .15), int(top + height * .5))
+                    time.sleep(.5)
+                raise AssertionError(f'System PiP action not found: {description}')
+
+            before = telemetry(lambda data: data.get('playback', {}).get('isPlaying'), 'playing before PiP')
+            device('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+            wait_pinned(True)
+            time.sleep(3)
+            first = pip_frame('pip-first')
+            # New comments must keep appearing beyond the lifetime of every cue
+            # visible at entry, even though React timers are suspended.
+            time.sleep(max(8, args.seconds))
+            second = pip_frame('pip-later')
+            assert not np.array_equal(first, second), 'Native danmaku did not advance'
+            mark = len(snapshot())
+            foreground(mark)
+            wait_pinned(False)
+            after = telemetry(lambda data: data.get('playback', {}).get('position', 0) >
+                              before['playback']['position'] + 6, 'playback advanced through PiP', mark)
+            frame('pip-returned')
+            results.append({'phase': 'pip-playing-danmaku', 'before': before, 'after': after})
+            print('PASS: PiP video and native danmaku continue; full-screen UI restored', flush=True)
+
+            for label, paused, enabled in [('disabled', False, False), ('paused', True, True)]:
+                mark = len(snapshot())
+                control.update(paused=paused, pipEnabled=enabled)
+                telemetry(lambda data: data.get('playback', {}).get('isPlaying') == (not paused), label, mark)
+                time.sleep(1)
+                device('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+                time.sleep(2)
+                assert not pinned(), f'{label} player unexpectedly entered PiP'
+                mark = len(snapshot())
+                foreground(mark)
+                results.append({'phase': label, 'pinned': False})
+                print(f'PASS: {label} auto-entry gate', flush=True)
+
+            mark = len(snapshot())
+            control.update(paused=False, pipEnabled=True, seek=50)
+            telemetry(lambda data: data.get('playback', {}).get('position', 0) >= 50 and
+                      data.get('playback', {}).get('isPlaying'), 'seek and resume', mark)
+            time.sleep(1)
+            device('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+            wait_pinned(True)
+            time.sleep(3)
+            pip_frame('pip-after-seek')
+            tap_pip_action('Pause')
+            time.sleep(4)
+            paused_first = pip_frame('pip-paused-first')
+            time.sleep(2)
+            paused_second = pip_frame('pip-paused-later')
+            assert np.array_equal(paused_first, paused_second), 'Danmaku continued while paused'
+            tap_pip_action('Play')
+            time.sleep(4)
+            resumed = pip_frame('pip-resumed')
+            assert not np.array_equal(paused_second, resumed), 'Danmaku did not resume'
+            results.append({'phase': 'native-pip-play-pause', 'passed': True})
+            print('PASS: native PiP play/pause actions and danmaku clock', flush=True)
+            tap_pip_action('Close')
+            wait_pinned(False)
+            time.sleep(1)
+            mark = len(snapshot())
+            foreground(mark)
+            wait_pinned(False)
+            telemetry(lambda data: not data.get('playback', {}).get('isPlaying', True), 'closed PiP pauses playback', mark)
+            results.append({'phase': 'close-pauses-playback', 'passed': True})
+            results.append({'phase': 'pip-after-seek', 'pinned': True})
+            loads = [event for event in snapshot() if event['event'] == 'load']
+            errors = [event for event in snapshot() if event['event'] == 'error']
+            assert len(loads) == 1 and not errors, (loads, errors)
+            assert device('shell', 'pidof', args.bundle_id) == pid, 'Process recreated during PiP'
+            native_log = device('logcat', '-d', f'--pid={pid}')
+            assert not re.search(r'Missing surface pointer|Error opening/initializing.*VO|EGL_BAD_SURFACE', native_log), 'Native surface error'
+            (work / 'result.json').write_text(json.dumps({'passed': True, 'pip': results,
+                                                       'sourceLoadCount': len(loads)}, indent=2) + '\n')
+            print('PASS: PiP video/danmaku, return, disabled/paused gates, seek, one source load', flush=True)
+            return
+        elif args.rotation:
             import numpy as np
             from PIL import Image
             paused_position = None

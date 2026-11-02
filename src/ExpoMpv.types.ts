@@ -175,7 +175,35 @@ export type ExpoMpvModuleEvents = Record<never, never>;
 
 // MARK: - View Props
 
+/** Native Android PiP text canvas. Times use media seconds, coordinates use the
+ * reference canvas, and y is the top of the text. Cues interpolate horizontally.
+ * Rendering follows mpv even while React Native's background timers are paused.
+ */
+export type PictureInPictureOverlay = {
+  width: number;
+  height: number;
+  fontSize: number;
+  opacity?: number;
+  cues: {
+    start: number;
+    end: number;
+    text: string;
+    color: string;
+    startX: number;
+    endX: number;
+    y: number;
+  }[];
+};
+
 export type ExpoMpvViewProps = {
+  /** Android 8+ only. Automatically enters system PiP when leaving while playing.
+   * Defaults to false. Requires the expo-mpv config plugin and a native rebuild.
+   * Use a full-screen player host; sibling UI is hidden natively during PiP.
+   */
+  pictureInPictureEnabled?: boolean;
+  /** Optional native timed text (e.g. danmaku), visible only in Android PiP. */
+  pictureInPictureOverlay?: PictureInPictureOverlay | null;
+  onPictureInPictureChange?: (event: { nativeEvent: { isActive: boolean } }) => void;
   /**
    * Media source URL to play. Can be a remote URL or a local file path.
    */
@@ -285,6 +313,8 @@ export type ExpoMpvViewProps = {
 // MARK: - View Ref Methods
 
 export type ExpoMpvViewRef = {
+  /** Android only. Returns false when disabled, unsupported, denied, or not ready. */
+  enterPictureInPicture: () => Promise<boolean>;
   play: () => Promise<void>;
   pause: () => Promise<void>;
   togglePlay: () => Promise<void>;

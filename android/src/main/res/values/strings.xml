@@ -1,0 +1,4 @@
+<resources>
+    <string name="expo_mpv_pip_play">Play</string>
+    <string name="expo_mpv_pip_pause">Pause</string>
+</resources>

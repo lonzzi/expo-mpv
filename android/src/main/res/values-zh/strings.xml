@@ -1,0 +1,4 @@
+<resources>
+    <string name="expo_mpv_pip_play">播放</string>
+    <string name="expo_mpv_pip_pause">暂停</string>
+</resources>

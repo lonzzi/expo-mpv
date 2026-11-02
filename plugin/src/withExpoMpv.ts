@@ -1,5 +1,10 @@
 import { execFileSync, execSync } from 'child_process';
-import { ConfigPlugin, withDangerousMod } from 'expo/config-plugins';
+import {
+  AndroidConfig,
+  ConfigPlugin,
+  withAndroidManifest,
+  withDangerousMod,
+} from 'expo/config-plugins';
 import fs from 'fs';
 import https from 'https';
 import path from 'path';
@@ -139,6 +144,16 @@ async function downloadMPVKit(frameworksDir: string): Promise<void> {
 }
 
 const withExpoMpv: ConfigPlugin = (config) => {
+  config = withAndroidManifest(config, (config) => {
+    const activity = AndroidConfig.Manifest.getMainActivityOrThrow(config.modResults);
+    activity.$['android:supportsPictureInPicture'] = 'true';
+    activity.$['android:resizeableActivity'] = 'true';
+    const changes = new Set((activity.$['android:configChanges'] ?? '').split('|').filter(Boolean));
+    for (const change of ['screenSize', 'smallestScreenSize', 'screenLayout', 'orientation'])
+      changes.add(change);
+    activity.$['android:configChanges'] = [...changes].join('|');
+    return config;
+  });
   // iOS: download MPVKit xcframeworks during prebuild
   config = withDangerousMod(config, [
     'ios',

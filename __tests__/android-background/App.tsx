@@ -1,11 +1,29 @@
 import { registerRootComponent } from 'expo';
+import { closeMenu } from 'expo-dev-menu';
 import { ExpoMpvView, type ExpoMpvViewRef } from 'expo-mpv';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
 
-const config: { endpoint: string; source: string; hwdec: string } = JSON.parse('__CONFIG_JSON__');
+const config: { endpoint: string; source: string; hwdec: string; pip?: boolean } =
+  JSON.parse('__CONFIG_JSON__');
+
+const pipOverlay = {
+  width: 384,
+  height: 216,
+  fontSize: 24,
+  opacity: 1,
+  cues: Array.from({ length: 90 }, (_, index) => ({
+    start: index * 2,
+    end: index * 2 + 4,
+    text: `弹幕 PIP ${index}`,
+    color: '#ff00ff',
+    startX: 384,
+    endX: -200,
+    y: (index % 3) * 32 + 20,
+  })),
+};
 
 function report(event: string, data: unknown) {
   void fetch(`${config.endpoint}/event`, {
@@ -19,6 +37,8 @@ function App() {
   const player = useRef<ExpoMpvViewRef>(null);
   const lastOrientation = useRef('');
   const [paused, setPaused] = useState(false);
+  const [pipEnabled, setPipEnabled] = useState(!!config.pip);
+  const lastSeek = useRef<number | null>(null);
   const [position, setPosition] = useState(0);
 
   useEffect(() => {
@@ -35,6 +55,11 @@ function App() {
         );
         if (stopped) return;
         setPaused(command.paused);
+        setPipEnabled(command.pipEnabled ?? !!config.pip);
+        if (command.seek != null && command.seek !== lastSeek.current) {
+          lastSeek.current = command.seek;
+          await player.current?.seekTo(command.seek);
+        }
         if (command.orientation && command.orientation !== lastOrientation.current) {
           lastOrientation.current = command.orientation;
           await ScreenOrientation.lockAsync(
@@ -78,9 +103,16 @@ function App() {
         startPosition={4}
         paused={paused}
         loop
+        pictureInPictureEnabled={pipEnabled}
+        pictureInPictureOverlay={pipOverlay}
+        onPictureInPictureChange={({ nativeEvent }) => report('pip', nativeEvent)}
         hwdec={config.hwdec}
         style={StyleSheet.absoluteFill}
-        onLoad={({ nativeEvent }) => report('load', nativeEvent)}
+        onLoad={({ nativeEvent }) => {
+          // A fresh development client can show onboarding over the video.
+          closeMenu();
+          report('load', nativeEvent);
+        }}
         onProgress={({ nativeEvent }) => setPosition(nativeEvent.position)}
         onPlaybackStateChange={({ nativeEvent }) => report('state', nativeEvent)}
         onError={({ nativeEvent }) => report('error', nativeEvent)}

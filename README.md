@@ -267,6 +267,35 @@ On iOS, these resources are stored in `ExpoMpvFonts.bundle`. Applications that
 copy the bundled font into their own cache should read it from that resource
 bundle rather than the application bundle's root.
 
+## Android picture in picture
+
+Enable `pictureInPictureEnabled` on a full-screen `ExpoMpvView` to enter system
+PiP when leaving the app during playback (Android 8+ on supported devices).
+Paused, unloaded, stopped and exiting players do not automatically enter PiP.
+The `expo-mpv` config plugin declares Activity support and resize configuration;
+rebuild the native app after adding this feature. System PiP permission still
+applies. `ref.enterPictureInPicture()` also allows explicit entry and returns
+`false` if the player is not eligible or the system denies it.
+
+PiP hides sibling UI natively and supplies play/pause actions. Expanding restores
+the same player and source; dismissing the window pauses playback. Observe
+`onPictureInPictureChange` for application state, but do not depend on React
+Native timers for animations inside PiP.
+
+For danmaku, supply `pictureInPictureOverlay`: a reference canvas (`width`,
+`height`, `fontSize`, optional `opacity`) and precomputed `cues`. Each cue specifies
+`start`/`end` in media seconds, `text`, `color`, horizontal `startX`/`endX`, and
+top coordinate `y`. Equal X coordinates produce fixed text. Android renders this
+overlay only in PiP using the native playback clock, independent of JS timers;
+pause, seeking and playback speed follow mpv. The host owns filtering and lane
+assignment. The initial renderer uses Android's default bold font. Ordinary
+mpv subtitles remain separate and visible. These APIs have no effect on iOS.
+
+Run `bun run test:android-background --project /path/to/host --device emulator-5554
+--pip` against a rebuilt Expo development host to check video and continuing
+danmaku, return to the app, disabled/paused entry gates, seeking and source reuse.
+The PiP check additionally requires Python with NumPy and Pillow.
+
 ## Android background regression
 
 With a compiled Expo development host containing this module,

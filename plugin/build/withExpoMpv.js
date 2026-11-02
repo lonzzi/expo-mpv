@@ -128,6 +128,16 @@ async function downloadMPVKit(frameworksDir) {
     console.log(`[expo-mpv] All MPVKit ${MPVKIT_VERSION} XCFrameworks downloaded.`);
 }
 const withExpoMpv = (config) => {
+    config = (0, config_plugins_1.withAndroidManifest)(config, (config) => {
+        const activity = config_plugins_1.AndroidConfig.Manifest.getMainActivityOrThrow(config.modResults);
+        activity.$['android:supportsPictureInPicture'] = 'true';
+        activity.$['android:resizeableActivity'] = 'true';
+        const changes = new Set((activity.$['android:configChanges'] ?? '').split('|').filter(Boolean));
+        for (const change of ['screenSize', 'smallestScreenSize', 'screenLayout', 'orientation'])
+            changes.add(change);
+        activity.$['android:configChanges'] = [...changes].join('|');
+        return config;
+    });
     // iOS: download MPVKit xcframeworks during prebuild
     config = (0, config_plugins_1.withDangerousMod)(config, [
         'ios',
@@ -146,7 +156,9 @@ const withExpoMpv = (config) => {
                 stdio: 'inherit',
             });
             (0, child_process_1.execFileSync)('python3', [path_1.default.join(packageDir, 'ios', 'enable-sup-demuxer.py'), frameworksDir], { stdio: 'inherit' });
-            (0, child_process_1.execFileSync)('python3', [path_1.default.join(packageDir, 'ios', 'optimize-libass.py'), frameworksDir], { stdio: 'inherit' });
+            (0, child_process_1.execFileSync)('python3', [path_1.default.join(packageDir, 'ios', 'optimize-libass.py'), frameworksDir], {
+                stdio: 'inherit',
+            });
             return config;
         },
     ]);

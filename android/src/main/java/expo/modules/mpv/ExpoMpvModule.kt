@@ -26,7 +26,8 @@ class ExpoMpvModule : Module() {
                 "onEnd",
                 "onBuffer",
                 "onSeek",
-                "onVolumeChange"
+                "onVolumeChange",
+                "onPictureInPictureChange"
             )
 
             // Props (same as iOS)
@@ -46,11 +47,20 @@ class ExpoMpvModule : Module() {
                 view.metadata = metadata ?: emptyMap()
             }
 
+            Prop("pictureInPictureEnabled") { view: ExpoMpvView, enabled: Boolean ->
+                view.pictureInPictureEnabled = enabled
+            }
+
+            Prop("pictureInPictureOverlay") { view: ExpoMpvView, overlay: Map<String, Any?>? ->
+                view.setPictureInPictureOverlay(overlay)
+            }
+
             OnViewDestroys { view: ExpoMpvView -> view.destroy() }
 
             OnViewDidUpdateProps { view: ExpoMpvView ->
                 view.loadSourceIfNeeded()
                 view.updateMediaSession()
+                view.updatePictureInPicture()
             }
 
             Prop("paused") { view: ExpoMpvView, paused: Boolean ->
@@ -82,6 +92,10 @@ class ExpoMpvModule : Module() {
             // Async functions (same as iOS)
             AsyncFunction("play") { view: ExpoMpvView ->
                 view.play()
+            }
+
+            AsyncFunction("enterPictureInPicture") { view: ExpoMpvView ->
+                view.enterPictureInPicture()
             }
 
             AsyncFunction("pause") { view: ExpoMpvView ->

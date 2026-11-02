@@ -1,6 +1,7 @@
 import { requireNativeView } from 'expo';
 import * as React from 'react';
 import { useImperativeHandle, useRef } from 'react';
+import { Platform } from 'react-native';
 
 import type { ExpoMpvViewProps, ExpoMpvViewRef } from './ExpoMpv.types';
 
@@ -12,12 +13,20 @@ type ExpoMpvViewComponentProps = ExpoMpvViewProps & {
 };
 
 function ExpoMpvView(props: ExpoMpvViewComponentProps) {
-  const { ref, ...restProps } = props;
+  const {
+    ref,
+    pictureInPictureEnabled,
+    pictureInPictureOverlay,
+    onPictureInPictureChange,
+    ...restProps
+  } = props;
   const nativeRef = useRef<any>(null);
 
   useImperativeHandle(
     ref,
     (): ExpoMpvViewRef => ({
+      enterPictureInPicture: () =>
+        nativeRef.current?.enterPictureInPicture?.() ?? Promise.resolve(false),
       // Every method resolves to a Promise even when the native view isn't
       // mounted yet. Without the `?? Promise.resolve()` fallbacks, optional
       // chaining returns `undefined` and callers doing `.then()` / `await`
@@ -89,7 +98,15 @@ function ExpoMpvView(props: ExpoMpvViewComponentProps) {
     [ref],
   );
 
-  return <NativeView ref={nativeRef} {...restProps} />;
+  return (
+    <NativeView
+      ref={nativeRef}
+      {...restProps}
+      {...(Platform.OS === 'android'
+        ? { pictureInPictureEnabled, pictureInPictureOverlay, onPictureInPictureChange }
+        : {})}
+    />
+  );
 }
 
 ExpoMpvView.displayName = 'ExpoMpvView';
